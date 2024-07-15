@@ -1,71 +1,5 @@
 
-// pipeline {
-//     agent any
 
-//     stages {
-//         stage('Clone or Pull') {
-//             steps {
-//                 script {
-//                     if (fileExists('whatsappbot-with-gpt')) {
-//                         dir('whatsappbot-with-gpt') {
-//                             sh 'git fetch'
-//                             sh 'git checkout main'
-//                             sh 'git pull origin main'
-//                         }
-//                     } else {
-//                         sh 'git clone -b main https://github.com/Ranur-react/whatsappbot-with-gpt.git'
-//                     }
-//                 }
-//             }
-//         }
-//         stage('Container Renewal') {
-//             steps {
-//                 script {
-//                     try{
-//                         sh 'docker stop node1'
-//                         sh 'docker rm node1'
-//                     }catch (Exeption e){
-//                         echo "container node1 was not running or has been remove manual before that pipeline run. ${e}"
-//                     }
-//                 }
-//             }
-//         }
-//         stage('Image Renewal') {
-//             steps {
-//                 script {
-//                     try{
-//                         sh 'docker rmi waweb-api'
-//                     }catch (Exeption e){
-//                         echo "image waweb-api not found or has been remove manual before that pipeline run. ${e}"
-//                     }
-//                 }
-//             }
-//         }
-//         stage('Build Docker New Image') {
-//             steps {
-//                 dir('myportofolio-startbootstrap') {
-//                     sh 'docker build -t waweb-api .'
-//                 }
-//             }
-//         }
-//         stage('Run New Container') {
-//             steps {
-//                 sh 'docker run -d --name node1 -p 211:22 -p 3000:3000 waweb-api'
-//             }
-//         }
-//     }
-//     post {
-//         always {
-//             echo 'This will always run'
-//         }
-//         success {
-//             echo 'This will run only if successful'
-//         }
-//         failure {
-//             echo 'This will run only if failed'
-//         }
-//     }
-// }
 pipeline {
     agent any
 
@@ -77,6 +11,7 @@ pipeline {
                         dir('whatsappbot-with-gpt') {
                             sh 'git fetch'
                             sh 'git checkout main'
+                            sh 'git config pull.rebase true'
                             sh 'git pull origin main'
                         }
                     } else {
