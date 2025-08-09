@@ -10,12 +10,12 @@ pipeline {
                     if (fileExists('whatsappbot-with-gpt')) {
                         dir('whatsappbot-with-gpt') {
                             sh 'git fetch'
-                            sh 'git checkout main'
+                            sh 'git checkout tbp.owhub.1'
                             sh 'git config pull.rebase true'
-                            sh 'git pull origin main'
+                            sh 'git pull origin tbp.owhub.1'
                         }
                     } else {
-                        sh 'git clone -b main https://github.com/Ranur-react/whatsappbot-with-gpt.git'
+                        sh 'git clone -b tbp.owhub.1 https://github.com/Ranur-react/whatsappbot-with-gpt.git'
                     }
                 }
             }
@@ -23,8 +23,8 @@ pipeline {
         stage('Copy .env File') {
             steps {
                 script {
-                    sh 'cat /mnt/env-aset/wabot/absekol.env'
-                    sh 'cp /mnt/env-aset/wabot/absekol.env whatsappbot-with-gpt/waweb-api/.env'
+                    sh 'cat /mnt/env-aset/wabot/owhub.env'
+                    sh 'cp /mnt/env-aset/wabot/owhub.env whatsappbot-with-gpt/waweb-api/.env'
                     sh 'cat whatsappbot-with-gpt/waweb-api/.env'
                 }
             }
@@ -61,7 +61,7 @@ pipeline {
         }
         stage('Run New Container') {
             steps {
-                sh 'docker run -d --name node1 -p 211:22 -p 3000:3000 waweb-api'
+                sh 'docker run -d --name node1 -p 3000:3000 waweb-api'
             }
         }
     }
