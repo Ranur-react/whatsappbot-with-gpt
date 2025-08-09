@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import routes from './routes.js';
-import { logRequests } from './middleware.js';
+import routes from './Route/index.js';
+import { logRequests } from './Helper/middleware.js';
 
 dotenv.config();
 

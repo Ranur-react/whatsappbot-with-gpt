@@ -1,5 +1,5 @@
-import axiosInstance from './axiosInstance.js';
-import respondBuilderText from './respondBuilder.js';
+import axiosInstance from '../axiosInstance.js';
+import respondBuilderText from '../respondBuilder.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
