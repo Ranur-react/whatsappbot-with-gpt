@@ -34,6 +34,7 @@ TARGET_PORT=3000                        # Port aplikasi Node.js
 # SSL Configuration
 ENABLE_SSL=true                 # Aktifkan SSL/HTTPS
 SSL_AUTO_REDIRECT=true          # Auto redirect HTTP ke HTTPS
+SSL_TYPE=letsencrypt           # Options: letsencrypt, corporate, custom
 SKIP_SSL_VERIFICATION=false     # Skip verifikasi domain (development only)
 ```
 
@@ -49,7 +50,118 @@ ENABLE_SERVER_STATUS=true              # Apache server status
 ALLOWED_MONITOR_IPS=127.0.0.1,10.100.129.51  # IP yang boleh monitoring
 ```
 
-## 🚀 Quick Start
+## 🔒 **SSL Certificate Options untuk Server Kantor**
+
+### **Option 1: Let's Encrypt (Quick Start)**
+✅ **Cocok untuk:**
+- Development dan testing
+- Proof of concept
+- Setup cepat tanpa approval
+
+⚠️ **Pertimbangan:**
+- Validity 90 hari (auto-renew)
+- Mungkin tidak sesuai kebijakan IT kantor
+
+```bash
+# Untuk Let's Encrypt (current setup)
+ENABLE_SSL=true
+SSL_TYPE=letsencrypt
+```
+
+### **Option 2: Corporate SSL Certificate (Recommended for Production)**
+✅ **Cocok untuk:**
+- Production deployment
+- Compliance dengan kebijakan kantor
+- Long-term stability
+
+📞 **Yang perlu dikonsultasikan dengan IT Department:**
+1. **SSL Certificate Policy** kantor
+2. **Wildcard certificate** untuk *.totalbp.com
+3. **Certificate procurement process**
+4. **Installation procedure** untuk corporate SSL
+
+```bash
+# Untuk Corporate SSL (setelah konsultasi IT)
+ENABLE_SSL=true
+SSL_TYPE=corporate
+CORPORATE_SSL_CERT_PATH=/etc/ssl/corporate/cert.pem
+CORPORATE_SSL_KEY_PATH=/etc/ssl/corporate/private.key
+CORPORATE_SSL_CHAIN_PATH=/etc/ssl/corporate/chain.pem
+```
+
+### **Rekomendasi Deployment Strategy:**
+
+**Phase 1: Development Setup**
+```bash
+# .env configuration untuk testing
+ENABLE_SSL=true
+SSL_TYPE=letsencrypt
+DEBUG_MODE=true
+```
+
+**Phase 2: IT Consultation**
+- Konsultasikan dengan IT department
+- Request corporate SSL certificate
+- Review security compliance
+
+**Phase 3: Production Deployment**
+```bash
+# .env configuration untuk production
+ENABLE_SSL=true
+SSL_TYPE=corporate
+DEBUG_MODE=false
+```
+
+## 🚀 **Deployment**
+
+### 1. Jalankan Setup Script
+
+```bash
+cd /path/to/whatsappbot-with-gpt/ApacheConfig
+sudo python3 config2.py
+```
+
+### 2. Script akan otomatis:
+
+- ✅ Load konfigurasi dari file `.env`
+- ✅ Install dependencies (Apache2, Docker, certbot)
+- ✅ Configure Apache virtual host sesuai .env
+- ✅ Setup SSL certificate (jika enabled)
+- ✅ Create Docker management scripts
+- ✅ Test complete deployment
+- ✅ Show configuration summary
+
+## 📋 **Checklist Konsultasi IT Department**
+
+Sebelum deploy production, konsultasikan hal-hal berikut dengan IT department:
+
+### **SSL Certificate Requirements**
+- [ ] **Corporate SSL Policy** - Apakah ada kebijakan khusus untuk SSL certificate?
+- [ ] **Wildcard Certificate** - Apakah kantor punya wildcard cert untuk *.totalbp.com?
+- [ ] **Certificate Authority** - CA mana yang digunakan kantor (DigiCert, GlobalSign, dll)?
+- [ ] **Certificate Procurement** - Bagaimana proses request certificate baru?
+
+### **Network & Security**
+- [ ] **Firewall Rules** - Port 80/443 sudah dibuka untuk server ini?
+- [ ] **DNS Configuration** - Siapa yang handle DNS untuk botdev-owhub.totalbp.com?
+- [ ] **Security Compliance** - Ada requirement khusus untuk aplikasi webhook?
+- [ ] **Monitoring Integration** - Apakah perlu integrasi dengan monitoring kantor?
+
+### **Infrastructure**
+- [ ] **Server Specification** - Apakah spec server sudah sesuai untuk production?
+- [ ] **Backup Strategy** - Bagaimana backup strategy untuk aplikasi ini?
+- [ ] **High Availability** - Apakah perlu setup load balancer/clustering?
+- [ ] **Resource Limits** - Ada batasan resource (CPU/Memory/Disk) untuk container?
+
+### **Operational**
+- [ ] **Log Management** - Apakah logs perlu dikirim ke central logging?
+- [ ] **Alert Configuration** - Siapa yang handle alert jika service down?
+- [ ] **Maintenance Window** - Kapan jadwal maintenance yang diperbolehkan?
+- [ ] **Documentation** - Dokumentasi apa saja yang diperlukan untuk handover?
+
+## ⚡ **Quick Start (Development/Testing)**
+
+Untuk setup cepat development dengan Let's Encrypt:
 
 ### 1. Edit Konfigurasi
 Buka file `config2.py` dan edit bagian konfigurasi:
