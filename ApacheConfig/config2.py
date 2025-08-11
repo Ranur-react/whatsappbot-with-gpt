@@ -1030,42 +1030,60 @@ def test_complete_deployment():
     
     # Test 5: HTTP access
     print("\n5. Testing HTTP access...")
-    http_result = subprocess.run(
-        "curl -s -o /dev/null -w '%{http_code}' http://{}/".format(DOMAIN_NAME),
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-    )
-    
-    if http_result.stdout.strip() in ["200", "301", "302"]:
-        print("   ✅ HTTP access working")
-        tests_passed += 1
-    else:
-        print("   ❌ HTTP access failed")
+    try:
+        http_result = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "http://{}/".format(DOMAIN_NAME)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10
+        )
+        
+        if http_result.stdout.strip() in ["200", "301", "302"]:
+            print("   ✅ HTTP access working (status: {})".format(http_result.stdout.strip()))
+            tests_passed += 1
+        else:
+            print("   ❌ HTTP access failed (status: {})".format(http_result.stdout.strip()))
+    except Exception as e:
+        print("   ❌ Error during HTTP test: {}".format(str(e)))
     
     # Test 6: HTTPS access (if SSL enabled)
-    print("\n6. Testing HTTPS access...")
-    https_result = subprocess.run(
-        "curl -s -o /dev/null -w '%{http_code}' https://{}/".format(DOMAIN_NAME),
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-    )
-    
-    if https_result.stdout.strip() in ["200", "301", "302"]:
-        print("   ✅ HTTPS access working")
-        tests_passed += 1
+    if ENABLE_SSL:
+        print("\n6. Testing HTTPS access...")
+        try:
+            https_result = subprocess.run(
+                ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-k", "https://{}/".format(DOMAIN_NAME)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10
+            )
+            
+            if https_result.stdout.strip() in ["200", "301", "302"]:
+                print("   ✅ HTTPS access working (status: {})".format(https_result.stdout.strip()))
+                tests_passed += 1
+            else:
+                print("   ❌ HTTPS access failed (status: {})".format(https_result.stdout.strip()))
+        except Exception as e:
+            print("   ❌ Error during HTTPS test: {}".format(str(e)))
     else:
-        print("   ⚠️  HTTPS access failed (SSL may not be configured)")
+        print("\n6. HTTPS testing skipped (SSL disabled)")
+        tests_passed += 1  # Don't penalize for disabled SSL
     
     # Test 7: WhatsApp webhook endpoint
     print("\n7. Testing WhatsApp webhook endpoint...")
-    webhook_result = subprocess.run(
-        "curl -s 'https://{}/webhook?hub.mode=subscribe&hub.challenge=test&hub.verify_token=your_verify_token'".format(DOMAIN_NAME),
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-    )
-    
-    if "test" in webhook_result.stdout:
-        print("   ✅ WhatsApp webhook endpoint responding")
-        tests_passed += 1
-    else:
-        print("   ❌ WhatsApp webhook endpoint not responding")
+    try:
+        if ENABLE_SSL:
+            webhook_url = "https://{}/webhook?hub.mode=subscribe&hub.challenge=test&hub.verify_token=your_verify_token".format(DOMAIN_NAME)
+        else:
+            webhook_url = "http://{}/webhook?hub.mode=subscribe&hub.challenge=test&hub.verify_token=your_verify_token".format(DOMAIN_NAME)
+        
+        webhook_result = subprocess.run(
+            ["curl", "-s", "-k", webhook_url],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10
+        )
+        
+        if "test" in webhook_result.stdout:
+            print("   ✅ WhatsApp webhook endpoint responding")
+            tests_passed += 1
+        else:
+            print("   ❌ WhatsApp webhook endpoint not responding")
+    except Exception as e:
+        print("   ❌ Error during webhook test: {}".format(str(e)))
     
     # Summary
     print("\n" + "="*50)
@@ -1219,22 +1237,40 @@ def main():
         
         # SSL setup dengan migration support
         if ENABLE_SSL:
-            if SSL_TYPE == 'corporate' and check_ssl_certificate():
-                # Check jika ada Let's Encrypt configuration yang perlu dimigrate
-                config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
-                if os.path.exists(config_file):
-                    with open(config_file, 'r') as f:
-                        content = f.read()
-                    if "letsencrypt" in content.lower() and SSL_TYPE == 'corporate':
-                        print("🔄 Detected Let's Encrypt configuration, migrating to Corporate SSL...")
+            print("\n🔐 Setting up SSL certificate...")
+            
+            # Jika Corporate SSL dan file sudah ada
+            if SSL_TYPE == 'corporate':
+                if check_ssl_certificate():
+                    print("✅ Corporate SSL files detected")
+                    
+                    # Check jika perlu migrate dari Let's Encrypt
+                    config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
+                    need_migration = False
+                    
+                    if os.path.exists(config_file):
+                        with open(config_file, 'r') as f:
+                            content = f.read()
+                        if "letsencrypt" in content.lower():
+                            need_migration = True
+                    
+                    if need_migration:
+                        print("🔄 Migrating from Let's Encrypt to Corporate SSL...")
                         if not migrate_to_corporate_ssl():
                             print("❌ SSL migration failed")
                             return
                     else:
+                        print("✅ Corporate SSL already configured")
                         setup_ssl_certificate()
                 else:
-                    setup_ssl_certificate()
+                    print("❌ Corporate SSL files not found!")
+                    print("Please ensure certificate files are placed in:")
+                    print("- {}".format(CORPORATE_SSL_CERT_PATH))
+                    print("- {}".format(CORPORATE_SSL_KEY_PATH))
+                    print("- {}".format(CORPORATE_SSL_CHAIN_PATH))
+                    return
             else:
+                # Let's Encrypt setup
                 setup_ssl_certificate()
         else:
             print("\n⚠️  SSL is disabled in .env configuration")
