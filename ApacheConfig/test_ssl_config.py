@@ -23,6 +23,11 @@ def load_env_config():
                     key, value = line.split('=', 1)
                     key = key.strip()
                     value = value.strip()
+                    
+                    # Remove inline comments
+                    if '#' in value:
+                        value = value.split('#')[0].strip()
+                    
                     # Remove quotes if present
                     if value.startswith('"') and value.endswith('"'):
                         value = value[1:-1]

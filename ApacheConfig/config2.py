@@ -23,6 +23,19 @@ def load_env_config():
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Remove inline comments
+                    if '#' in value:
+                        value = value.split('#')[0].strip()
+                    
+                    # Remove quotes if present
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    elif value.startswith("'") and value.endswith("'"):
+                        value = value[1:-1]
+                    
                     config[key.strip()] = value.strip()
         
         print("✅ Configuration loaded from .env file")
@@ -1239,8 +1252,12 @@ def main():
         if ENABLE_SSL:
             print("\n🔐 Setting up SSL certificate...")
             
+            # Debug SSL_TYPE value
+            print("DEBUG: SSL_TYPE = '{}'".format(repr(SSL_TYPE)))
+            
             # Jika Corporate SSL dan file sudah ada
             if SSL_TYPE == 'corporate':
+                print("✅ Corporate SSL mode detected")
                 if check_ssl_certificate():
                     print("✅ Corporate SSL files detected")
                     
@@ -1270,6 +1287,7 @@ def main():
                     print("- {}".format(CORPORATE_SSL_CHAIN_PATH))
                     return
             else:
+                print("⚠️  SSL_TYPE is not 'corporate', using Let's Encrypt mode")
                 # Let's Encrypt setup
                 setup_ssl_certificate()
         else:
