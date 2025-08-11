@@ -337,7 +337,7 @@ def create_apache_vhost_config():
     if ENABLE_SERVER_STATUS:
         allowed_ips = ""
         for ip in ALLOWED_MONITOR_IPS:
-            allowed_ips += "        Require ip {}\\n".format(ip.strip())
+            allowed_ips += "        Require ip {}\n".format(ip.strip())
         
         server_status_config = """    # Status endpoint untuk monitoring
     <Location "/server-status">
