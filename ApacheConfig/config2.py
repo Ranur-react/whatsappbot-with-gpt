@@ -1,5 +1,6 @@
 import subprocess
 import os
+import shutil
 from datetime import datetime
 
 # ====================================
@@ -53,6 +54,12 @@ TARGET_PORT = int(ENV_CONFIG.get('TARGET_PORT', '3000'))
 # SSL Configuration
 ENABLE_SSL = ENV_CONFIG.get('ENABLE_SSL', 'true').lower() == 'true'
 SSL_AUTO_REDIRECT = ENV_CONFIG.get('SSL_AUTO_REDIRECT', 'true').lower() == 'true'
+SSL_TYPE = ENV_CONFIG.get('SSL_TYPE', 'letsencrypt')  # letsencrypt, corporate
+
+# Corporate SSL paths
+CORPORATE_SSL_CERT_PATH = ENV_CONFIG.get('CORPORATE_SSL_CERT_PATH', '/etc/ssl/corporate/cert.pem')
+CORPORATE_SSL_KEY_PATH = ENV_CONFIG.get('CORPORATE_SSL_KEY_PATH', '/etc/ssl/corporate/private.key')
+CORPORATE_SSL_CHAIN_PATH = ENV_CONFIG.get('CORPORATE_SSL_CHAIN_PATH', '/etc/ssl/corporate/chain.pem')
 
 # Security Configuration
 ENABLE_SECURITY_HEADERS = ENV_CONFIG.get('ENABLE_SECURITY_HEADERS', 'true').lower() == 'true'
@@ -80,6 +87,7 @@ print("- Domain: {}".format(DOMAIN_NAME))
 print("- Server IP: {}".format(SERVER_IP))
 print("- Target Port: {}".format(TARGET_PORT))
 print("- SSL Enabled: {}".format(ENABLE_SSL))
+print("- SSL Type: {}".format(SSL_TYPE))
 print("- Debug Mode: {}".format(DEBUG_MODE))
 
 def run_command(command, quiet=False):
@@ -141,22 +149,49 @@ def check_ssl_certificate():
     """Cek apakah SSL certificate sudah ada"""
     print("=== CHECKING SSL CERTIFICATE ===")
     
-    cert_path = "/etc/letsencrypt/live/{}/fullchain.pem".format(DOMAIN_NAME)
-    if os.path.exists(cert_path):
-        print("✅ SSL certificate already exists for {}".format(DOMAIN_NAME))
+    if SSL_TYPE == 'corporate':
+        # Check corporate SSL files
+        print("Checking Corporate SSL certificate...")
         
-        # Cek expiry date
-        result = subprocess.run(
-            "openssl x509 -in {} -noout -enddate".format(cert_path),
-            shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-        )
-        if result.returncode == 0:
-            print("Certificate info: {}".format(result.stdout.strip()))
+        cert_exists = os.path.exists(CORPORATE_SSL_CERT_PATH)
+        key_exists = os.path.exists(CORPORATE_SSL_KEY_PATH)
+        chain_exists = os.path.exists(CORPORATE_SSL_CHAIN_PATH)
         
-        return True
+        print("Certificate file: {} - {}".format(CORPORATE_SSL_CERT_PATH, "✅ Found" if cert_exists else "❌ Not found"))
+        print("Private key file: {} - {}".format(CORPORATE_SSL_KEY_PATH, "✅ Found" if key_exists else "❌ Not found"))
+        print("Chain file: {} - {}".format(CORPORATE_SSL_CHAIN_PATH, "✅ Found" if chain_exists else "❌ Not found"))
+        
+        if cert_exists and key_exists:
+            # Check certificate validity
+            result = subprocess.run(
+                "openssl x509 -in {} -noout -enddate".format(CORPORATE_SSL_CERT_PATH),
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+            )
+            if result.returncode == 0:
+                print("Corporate certificate info: {}".format(result.stdout.strip()))
+            
+            return True
+        else:
+            print("⚠️  Corporate SSL files missing, please install them first")
+            return False
     else:
-        print("⚠️  SSL certificate not found, will obtain new certificate")
-        return False
+        # Check Let's Encrypt certificate
+        cert_path = "/etc/letsencrypt/live/{}/fullchain.pem".format(DOMAIN_NAME)
+        if os.path.exists(cert_path):
+            print("✅ Let's Encrypt SSL certificate exists for {}".format(DOMAIN_NAME))
+            
+            # Cek expiry date
+            result = subprocess.run(
+                "openssl x509 -in {} -noout -enddate".format(cert_path),
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+            )
+            if result.returncode == 0:
+                print("Certificate info: {}".format(result.stdout.strip()))
+            
+            return True
+        else:
+            print("⚠️  Let's Encrypt SSL certificate not found, will obtain new certificate")
+            return False
 
 def check_domain_resolution():
     """Cek apakah domain sudah mengarah ke server yang benar"""
@@ -363,18 +398,73 @@ def create_apache_vhost_config():
         server_status_config=server_status_config
     )
 
-    
     # SSL Configuration
     if ENABLE_SSL:
-        ssl_config = """
-# HTTPS Configuration
+        if SSL_TYPE == 'corporate':
+            ssl_config = """
+# HTTPS Configuration (Corporate SSL)
 <IfModule mod_ssl.c>
 <VirtualHost *:443>
     ServerName {domain}
     ServerAlias www.{domain}
     DocumentRoot /var/www/html
 
-    # SSL Configuration
+    # Corporate SSL Configuration
+    SSLEngine on
+    SSLCertificateFile {cert_path}
+    SSLCertificateKeyFile {key_path}
+    SSLCertificateChainFile {chain_path}
+    
+    # Modern SSL configuration
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+    SSLHonorCipherOrder off
+    SSLSessionTickets off
+
+    # Proxy configuration (same as HTTP)
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:{port}/
+    ProxyPassReverse / http://localhost:{port}/
+    ProxyPassReverse / http://127.0.0.1:{port}/
+    ProxyRequests Off
+    
+{security_headers_ssl}
+    
+    # WebSocket support
+    RewriteEngine on
+    RewriteCond %{{HTTP:Upgrade}} websocket [NC]
+    RewriteCond %{{HTTP:Connection}} upgrade [NC]
+    RewriteRule ^/?(.*) "ws://localhost:{port}/$1" [P,L]
+
+    # Health check endpoint
+    <Location "/health">
+        ProxyPass http://localhost:{port}/status
+        ProxyPassReverse http://localhost:{port}/status
+    </Location>
+
+{logging_config_ssl}
+{server_status_config}
+</VirtualHost>
+</IfModule>""".format(
+                domain=DOMAIN_NAME,
+                port=TARGET_PORT,
+                cert_path=CORPORATE_SSL_CERT_PATH,
+                key_path=CORPORATE_SSL_KEY_PATH,
+                chain_path=CORPORATE_SSL_CHAIN_PATH,
+                security_headers_ssl=security_headers,
+                logging_config_ssl=logging_config.replace(DOCKER_SERVICE_NAME, DOCKER_SERVICE_NAME + "_ssl") if logging_config else "",
+                server_status_config=server_status_config
+            )
+        else:
+            ssl_config = """
+# HTTPS Configuration (Let's Encrypt)
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName {domain}
+    ServerAlias www.{domain}
+    DocumentRoot /var/www/html
+
+    # Let's Encrypt SSL Configuration
     SSLEngine on
     SSLCertificateFile /etc/letsencrypt/live/{domain}/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/{domain}/privkey.pem
@@ -410,12 +500,12 @@ def create_apache_vhost_config():
 {server_status_config}
 </VirtualHost>
 </IfModule>""".format(
-            domain=DOMAIN_NAME,
-            port=TARGET_PORT,
-            security_headers_ssl=security_headers,
-            logging_config_ssl=logging_config.replace(DOCKER_SERVICE_NAME, DOCKER_SERVICE_NAME + "_ssl") if logging_config else "",
-            server_status_config=server_status_config
-        )
+                domain=DOMAIN_NAME,
+                port=TARGET_PORT,
+                security_headers_ssl=security_headers,
+                logging_config_ssl=logging_config.replace(DOCKER_SERVICE_NAME, DOCKER_SERVICE_NAME + "_ssl") if logging_config else "",
+                server_status_config=server_status_config
+            )
         config += ssl_config
     
     with open(config_file, 'w') as f:
@@ -649,7 +739,7 @@ def enable_site_and_reload():
         print("Apache configuration test failed!")
 
 def setup_ssl_certificate():
-    """Setup SSL certificate dengan Let's Encrypt berdasarkan konfigurasi .env"""
+    """Setup SSL certificate berdasarkan konfigurasi .env"""
     if not ENABLE_SSL:
         print("=== SSL DISABLED IN CONFIGURATION ===")
         print("SSL is disabled in .env file (ENABLE_SSL=false)")
@@ -658,32 +748,56 @@ def setup_ssl_certificate():
         
     print("=== SETTING UP SSL CERTIFICATE ===")
     print("Domain: {}".format(DOMAIN_NAME))
-    print("Email: {}".format(ADMIN_EMAIL))
-    print("Server IP: {}".format(SERVER_IP))
+    print("SSL Type: {}".format(SSL_TYPE))
     print("Auto Redirect: {}".format(SSL_AUTO_REDIRECT))
     
-    # Cek apakah SSL sudah ada
+    if SSL_TYPE == 'corporate':
+        return setup_corporate_ssl()
+    else:
+        return setup_letsencrypt_ssl()
+
+def setup_corporate_ssl():
+    """Setup Corporate SSL Certificate"""
+    print("=== SETTING UP CORPORATE SSL ===")
+    
+    # Check if corporate SSL files exist
     if check_ssl_certificate():
-        print("✅ SSL certificate already exists and valid")
+        print("✅ Corporate SSL certificate is already configured")
         
         # Enable HTTPS redirect jika diaktifkan di .env
         if SSL_AUTO_REDIRECT:
-            config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
-            if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    content = f.read()
-                
-                # Uncomment HTTPS redirect rules jika masih di-comment
-                if "# RewriteEngine On" in content:
-                    content = content.replace("# RewriteEngine On", "RewriteEngine On")
-                    content = content.replace("# RewriteCond %{HTTPS} off", "RewriteCond %{HTTPS} off")
-                    content = content.replace("# RewriteRule", "RewriteRule")
-                    
-                    with open(config_file, 'w') as f:
-                        f.write(content)
-                    
-                    print("✅ HTTPS redirect enabled")
-                    run_command("systemctl reload apache2")
+            enable_https_redirect()
+        
+        # Test SSL configuration
+        if run_command("apache2ctl configtest"):
+            run_command("systemctl reload apache2")
+            print("✅ Apache reloaded with Corporate SSL")
+        else:
+            print("❌ Apache configuration test failed!")
+            return False
+        
+        return True
+    else:
+        print("❌ Corporate SSL files not found!")
+        print("Please ensure the following files exist:")
+        print("- Certificate: {}".format(CORPORATE_SSL_CERT_PATH))
+        print("- Private Key: {}".format(CORPORATE_SSL_KEY_PATH))
+        print("- Chain: {}".format(CORPORATE_SSL_CHAIN_PATH))
+        print("")
+        print("Contact IT department to obtain corporate SSL certificate")
+        return False
+
+def setup_letsencrypt_ssl():
+    """Setup Let's Encrypt SSL Certificate"""
+    print("=== SETTING UP LET'S ENCRYPT SSL ===")
+    
+    # Cek apakah SSL sudah ada
+    if check_ssl_certificate():
+        print("✅ Let's Encrypt SSL certificate already exists and valid")
+        
+        # Enable HTTPS redirect jika diaktifkan di .env
+        if SSL_AUTO_REDIRECT:
+            enable_https_redirect()
         
         return True
     
@@ -712,10 +826,10 @@ def setup_ssl_certificate():
     if SKIP_SSL_VERIFICATION:
         print("⚠️  SSL verification is skipped (SKIP_SSL_VERIFICATION=true)")
         
-    response = input("\nContinue with SSL certificate setup? (y/N): ")
+    response = input("\nContinue with Let's Encrypt SSL certificate setup? (y/N): ")
     
     if response.lower() == 'y':
-        print("\n🔐 Obtaining SSL certificate...")
+        print("\n🔐 Obtaining Let's Encrypt SSL certificate...")
         
         # Test Apache configuration first
         if not run_command("apache2ctl configtest"):
@@ -733,21 +847,12 @@ def setup_ssl_certificate():
         ssl_command = "certbot --apache -d {} {}".format(DOMAIN_NAME, ssl_options)
         
         if run_command(ssl_command):
-            print("✅ SSL certificate obtained for {}".format(DOMAIN_NAME))
+            print("✅ Let's Encrypt SSL certificate obtained for {}".format(DOMAIN_NAME))
             run_command("systemctl reload apache2")
             
             # Test HTTPS jika tidak skip verification
             if not SKIP_SSL_VERIFICATION:
-                print("\n🔍 Testing HTTPS connectivity...")
-                test_result = subprocess.run(
-                    "curl -s -I https://{}/ | head -1".format(DOMAIN_NAME),
-                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
-                )
-                
-                if "200 OK" in test_result.stdout or "302" in test_result.stdout:
-                    print("✅ HTTPS is working: https://{}".format(DOMAIN_NAME))
-                else:
-                    print("⚠️  HTTPS test inconclusive, please test manually")
+                test_https_connectivity()
             
             # Setup auto-renewal check
             run_command("systemctl enable certbot.timer")
@@ -767,6 +872,38 @@ def setup_ssl_certificate():
         print("  certbot --apache -d {}".format(DOMAIN_NAME))
         return False
 
+def enable_https_redirect():
+    """Enable HTTPS redirect in Apache configuration"""
+    config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
+    if os.path.exists(config_file):
+        with open(config_file, 'r') as f:
+            content = f.read()
+        
+        # Uncomment HTTPS redirect rules jika masih di-comment
+        if "# RewriteEngine On" in content:
+            content = content.replace("# RewriteEngine On", "RewriteEngine On")
+            content = content.replace("# RewriteCond %{HTTPS} off", "RewriteCond %{HTTPS} off")
+            content = content.replace("# RewriteRule", "RewriteRule")
+            
+            with open(config_file, 'w') as f:
+                f.write(content)
+            
+            print("✅ HTTPS redirect enabled")
+            run_command("systemctl reload apache2")
+
+def test_https_connectivity():
+    """Test HTTPS connectivity"""
+    print("\n🔍 Testing HTTPS connectivity...")
+    test_result = subprocess.run(
+        "curl -s -I https://{}/ | head -1".format(DOMAIN_NAME),
+        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+    )
+    
+    if "200 OK" in test_result.stdout or "302" in test_result.stdout:
+        print("✅ HTTPS is working: https://{}".format(DOMAIN_NAME))
+    else:
+        print("⚠️  HTTPS test inconclusive, please test manually")
+
 def show_configuration_summary():
     """Tampilkan ringkasan konfigurasi berdasarkan .env"""
     print("\n" + "="*60)
@@ -782,6 +919,12 @@ def show_configuration_summary():
     print("")
     print("SSL Configuration:")
     print("- SSL Enabled: {}".format(ENABLE_SSL))
+    if ENABLE_SSL:
+        print("- SSL Type: {}".format(SSL_TYPE))
+        if SSL_TYPE == 'corporate':
+            print("- Corporate Cert: {}".format(CORPORATE_SSL_CERT_PATH))
+            print("- Corporate Key: {}".format(CORPORATE_SSL_KEY_PATH))
+            print("- Corporate Chain: {}".format(CORPORATE_SSL_CHAIN_PATH))
     print("- Auto Redirect: {}".format(SSL_AUTO_REDIRECT))
     print("- Skip Verification: {}".format(SKIP_SSL_VERIFICATION))
     print("")
@@ -798,6 +941,16 @@ def show_configuration_summary():
     print("")
     print("Development Options:")
     print("- Debug Mode: {}".format(DEBUG_MODE))
+    print("")
+    print("SSL Migration Guide:")
+    if ENABLE_SSL and SSL_TYPE == 'letsencrypt':
+        print("- To migrate to Corporate SSL:")
+        print("  1. Obtain corporate SSL certificates from IT")
+        print("  2. Update .env: SSL_TYPE=corporate")
+        print("  3. Run script again (automatic migration)")
+    elif ENABLE_SSL and SSL_TYPE == 'corporate':
+        print("- Corporate SSL is configured")
+        print("- Automatic Let's Encrypt renewal disabled")
     print("")
     print("Management Commands:")
     print("- Start service: whatsapp-service start")
@@ -939,6 +1092,107 @@ def test_complete_deployment():
     
     return tests_passed >= 5
 
+def migrate_to_corporate_ssl():
+    """Migrate dari Let's Encrypt ke Corporate SSL"""
+    print("=== MIGRATING TO CORPORATE SSL ===")
+    
+    config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
+    
+    if not os.path.exists(config_file):
+        print("❌ Apache configuration file not found: {}".format(config_file))
+        return False
+    
+    # Backup existing configuration
+    backup_file = "{}.letsencrypt.backup".format(config_file)
+    try:
+        shutil.copy2(config_file, backup_file)
+        print("✅ Backed up current configuration to: {}".format(backup_file))
+    except Exception as e:
+        print("⚠️  Could not create backup: {}".format(str(e)))
+    
+    # Recreate Apache configuration with Corporate SSL
+    try:
+        create_apache_vhost_config()
+        print("✅ Updated Apache configuration for Corporate SSL")
+        
+        # Test configuration
+        if run_command("apache2ctl configtest"):
+            print("✅ Apache configuration test passed")
+            
+            # Disable certbot auto-renewal
+            print("🔄 Disabling Let's Encrypt auto-renewal...")
+            run_command("systemctl stop certbot.timer")
+            run_command("systemctl disable certbot.timer")
+            
+            # Reload Apache
+            run_command("systemctl reload apache2")
+            print("✅ Migration to Corporate SSL completed successfully")
+            
+            # Test HTTPS
+            if not SKIP_SSL_VERIFICATION:
+                test_https_connectivity()
+            
+            return True
+        else:
+            print("❌ Apache configuration test failed!")
+            if os.path.exists(backup_file):
+                print("🔄 Restoring backup configuration...")
+                shutil.copy2(backup_file, config_file)
+                run_command("systemctl reload apache2")
+            return False
+            
+    except Exception as e:
+        print("❌ Error updating configuration: {}".format(str(e)))
+        if os.path.exists(backup_file):
+            print("🔄 Restoring backup configuration...")
+            shutil.copy2(backup_file, config_file)
+            run_command("systemctl reload apache2")
+        return False
+
+def show_ssl_migration_guide():
+    """Tampilkan panduan migration SSL"""
+    print("\n" + "="*70)
+    print("SSL MIGRATION GUIDE")
+    print("="*70)
+    print("Current SSL Type: {}".format(SSL_TYPE))
+    print("")
+    
+    if SSL_TYPE == 'letsencrypt':
+        print("TO MIGRATE TO CORPORATE SSL:")
+        print("1. Obtain Corporate SSL certificate files from IT department")
+        print("2. Place certificates in these paths:")
+        print("   - Certificate: {}".format(CORPORATE_SSL_CERT_PATH))
+        print("   - Private Key: {}".format(CORPORATE_SSL_KEY_PATH))
+        print("   - Chain: {}".format(CORPORATE_SSL_CHAIN_PATH))
+        print("3. Update .env file: SSL_TYPE=corporate")
+        print("4. Run this script again")
+        print("")
+        print("The script will automatically:")
+        print("- Backup current Let's Encrypt configuration")
+        print("- Update Apache configuration for Corporate SSL")
+        print("- Disable Let's Encrypt auto-renewal")
+        print("- Test the new configuration")
+        
+    elif SSL_TYPE == 'corporate':
+        print("CORPORATE SSL CONFIGURATION:")
+        print("Certificate Path: {}".format(CORPORATE_SSL_CERT_PATH))
+        print("Private Key Path: {}".format(CORPORATE_SSL_KEY_PATH))
+        print("Chain Path: {}".format(CORPORATE_SSL_CHAIN_PATH))
+        print("")
+        if not check_ssl_certificate():
+            print("❌ Corporate SSL files not found!")
+            print("Please ensure certificate files are in the correct paths")
+        else:
+            print("✅ Corporate SSL files detected")
+        
+        print("")
+        print("If you need to rollback to Let's Encrypt:")
+        print("1. Update .env file: SSL_TYPE=letsencrypt")
+        print("2. Run this script again")
+        print("3. The script will restore Let's Encrypt configuration")
+        
+    print("="*70)
+
 def main():
     """Main function"""
     print("=" * 60)
@@ -947,8 +1201,12 @@ def main():
     print("Configuration loaded from: {}".format(os.path.join(os.path.dirname(__file__), '.env')))
     print("Domain: {} -> Port: {}".format(DOMAIN_NAME, TARGET_PORT))
     print("Docker Container: {}".format(DOCKER_CONTAINER_NAME))
-    print("SSL Enabled: {}".format(ENABLE_SSL))
+    print("SSL Enabled: {} (Type: {})".format(ENABLE_SSL, SSL_TYPE))
     print("=" * 60)
+    
+    # Show SSL migration guide
+    if ENABLE_SSL:
+        show_ssl_migration_guide()
     
     try:
         backup_apache_config()
@@ -959,9 +1217,25 @@ def main():
         create_docker_management_script()
         enable_site_and_reload()
         
-        # Optional SSL setup berdasarkan .env
+        # SSL setup dengan migration support
         if ENABLE_SSL:
-            setup_ssl_certificate()
+            if SSL_TYPE == 'corporate' and check_ssl_certificate():
+                # Check jika ada Let's Encrypt configuration yang perlu dimigrate
+                config_file = "/etc/apache2/sites-available/{}.conf".format(DOMAIN_NAME)
+                if os.path.exists(config_file):
+                    with open(config_file, 'r') as f:
+                        content = f.read()
+                    if "letsencrypt" in content.lower() and SSL_TYPE == 'corporate':
+                        print("🔄 Detected Let's Encrypt configuration, migrating to Corporate SSL...")
+                        if not migrate_to_corporate_ssl():
+                            print("❌ SSL migration failed")
+                            return
+                    else:
+                        setup_ssl_certificate()
+                else:
+                    setup_ssl_certificate()
+            else:
+                setup_ssl_certificate()
         else:
             print("\n⚠️  SSL is disabled in .env configuration")
             print("To enable SSL, set ENABLE_SSL=true in .env file")
