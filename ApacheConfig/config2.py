@@ -53,8 +53,19 @@ ENV_CONFIG = load_env_config()
 
 # Domain dan Server Configuration
 DOMAIN_NAME = ENV_CONFIG.get('DOMAIN_NAME', 'localhost')
-SERVER_IP = ENV_CONFIG.get('SERVER_IP', '127.0.0.1')
+SERVER_IP_SANDBOX = ENV_CONFIG.get('SERVER_IP_SANDBOX', '127.0.0.1')
+SERVER_IP_INTERNET = ENV_CONFIG.get('SERVER_IP_INTERNET', '127.0.0.1')
+SERVER_IP = SERVER_IP_SANDBOX  # Backward compatibility
 ADMIN_EMAIL = ENV_CONFIG.get('ADMIN_EMAIL', 'admin@localhost')
+
+# Network Interface Configuration
+NIC_SANDBOX = ENV_CONFIG.get('NIC_SANDBOX', 'ens120')
+NIC_INTERNET = ENV_CONFIG.get('NIC_INTERNET', 'ens192')
+
+# Public Access Configuration
+USE_NGROK = ENV_CONFIG.get('USE_NGROK', 'false').lower() == 'true'
+NGROK_REGION = ENV_CONFIG.get('NGROK_REGION', 'ap')
+NGROK_SUBDOMAIN = ENV_CONFIG.get('NGROK_SUBDOMAIN', 'webhook')
 
 # Docker Configuration
 DOCKER_CONTAINER_NAME = ENV_CONFIG.get('DOCKER_CONTAINER_NAME', 'node1')
@@ -97,10 +108,12 @@ SKIP_SSL_VERIFICATION = ENV_CONFIG.get('SKIP_SSL_VERIFICATION', 'false').lower()
 
 print("Configuration Summary:")
 print("- Domain: {}".format(DOMAIN_NAME))
-print("- Server IP: {}".format(SERVER_IP))
+print("- SANDBOX IP ({}): {}".format(NIC_SANDBOX, SERVER_IP_SANDBOX))
+print("- INTERNET IP ({}): {}".format(NIC_INTERNET, SERVER_IP_INTERNET))
 print("- Target Port: {}".format(TARGET_PORT))
 print("- SSL Enabled: {}".format(ENABLE_SSL))
 print("- SSL Type: {}".format(SSL_TYPE))
+print("- Use Ngrok: {}".format(USE_NGROK))
 print("- Debug Mode: {}".format(DEBUG_MODE))
 
 def run_command(command, quiet=False):
@@ -904,6 +917,104 @@ def enable_https_redirect():
             print("✅ HTTPS redirect enabled")
             run_command("systemctl reload apache2")
 
+def check_network_interfaces():
+    """Check if network interfaces are available and configured"""
+    print("\n=== Network Interface Check ===")
+    
+    try:
+        # Check for network interfaces
+        result = subprocess.run(['ip', 'addr', 'show'], 
+                               capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            output = result.stdout
+            
+            # Check for required interfaces
+            interfaces_found = []
+            if NIC_SANDBOX in output:
+                interfaces_found.append(f"✓ {NIC_SANDBOX}")
+            else:
+                interfaces_found.append(f"✗ {NIC_SANDBOX} (NOT FOUND)")
+                
+            if NIC_INTERNET in output:
+                interfaces_found.append(f"✓ {NIC_INTERNET}")
+            else:
+                interfaces_found.append(f"✗ {NIC_INTERNET} (NOT FOUND)")
+            
+            print("Network Interfaces:")
+            for interface in interfaces_found:
+                print(f"  {interface}")
+                
+            # Check IP assignments
+            print("\nIP Address Configuration:")
+            if SERVER_IP_SANDBOX in output:
+                print(f"  ✓ {SERVER_IP_SANDBOX} assigned to {NIC_SANDBOX}")
+            else:
+                print(f"  ⚠ {SERVER_IP_SANDBOX} not found on {NIC_SANDBOX}")
+                
+            if SERVER_IP_INTERNET in output:
+                print(f"  ✓ {SERVER_IP_INTERNET} assigned to {NIC_INTERNET}")
+            else:
+                print(f"  ⚠ {SERVER_IP_INTERNET} not found on {NIC_INTERNET}")
+                
+        else:
+            print("⚠ Could not check network interfaces")
+            
+    except Exception as e:
+        print(f"⚠ Network interface check failed: {e}")
+
+def manage_ngrok_service():
+    """Manage ngrok service based on USE_NGROK configuration"""
+    print("\n=== Ngrok Service Management ===")
+    
+    try:
+        # Check if setup_ngrok.sh exists
+        ngrok_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'setup_ngrok.sh')
+        
+        if not os.path.exists(ngrok_script):
+            print("⚠ setup_ngrok.sh not found. Ngrok management not available.")
+            return
+            
+        if USE_NGROK:
+            print("✓ USE_NGROK=true - Starting ngrok tunnel...")
+            # Start ngrok service
+            result = subprocess.run(['/bin/bash', ngrok_script, 'start'], 
+                                   capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                print("✅ Ngrok tunnel started successfully")
+                # Show status
+                status_result = subprocess.run(['/bin/bash', ngrok_script, 'status'], 
+                                             capture_output=True, text=True, timeout=10)
+                if status_result.returncode == 0:
+                    print(status_result.stdout)
+            else:
+                print(f"⚠ Failed to start ngrok: {result.stderr}")
+                
+        else:
+            print("✓ USE_NGROK=false - Stopping ngrok tunnel...")
+            # Stop ngrok service
+            result = subprocess.run(['/bin/bash', ngrok_script, 'stop'], 
+                                   capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                print("✅ Ngrok tunnel stopped successfully")
+            else:
+                print(f"⚠ Failed to stop ngrok: {result.stderr}")
+                
+            # Verify ngrok is stopped
+            verify_result = subprocess.run(['/bin/bash', ngrok_script, 'status'], 
+                                         capture_output=True, text=True, timeout=10)
+            if "No active tunnels" in verify_result.stdout or verify_result.returncode != 0:
+                print("✅ Confirmed: No active ngrok tunnels")
+            else:
+                print("⚠ Warning: Some ngrok processes may still be running")
+                
+    except subprocess.TimeoutExpired:
+        print("⚠ Ngrok command timed out")
+    except Exception as e:
+        print(f"⚠ Ngrok management failed: {e}")
+
 def test_https_connectivity():
     """Test HTTPS connectivity"""
     print("\n🔍 Testing HTTPS connectivity...")
@@ -1302,6 +1413,12 @@ def main():
         if ENABLE_SSL:
             print("HTTPS: https://{}".format(DOMAIN_NAME))
         
+        # Check network interfaces
+        check_network_interfaces()
+        
+        # Manage ngrok based on configuration
+        manage_ngrok_service()
+        
         # Run deployment test
         print("\n" + "="*60)
         print("Running deployment test to verify everything is working...")
@@ -1320,19 +1437,34 @@ def main():
         print("="*60)
         print("1. Configure your WhatsApp Business API webhook URL:")
         if ENABLE_SSL:
-            print("   https://{}/webhook".format(DOMAIN_NAME))
+            print("   Internal: https://{}/webhook".format(DOMAIN_NAME))
         else:
-            print("   http://{}/webhook".format(DOMAIN_NAME))
-        print("2. Set verify token in your app configuration")
-        print("3. Test webhook with Facebook's webhook tester")
-        print("4. Monitor logs: docker logs {}".format(DOCKER_CONTAINER_NAME))
-        print("5. Check service status: systemctl status apache2")
-        print("6. Manage service: whatsapp-service {{start|stop|status|logs|health}}")
+            print("   Internal: http://{}/webhook".format(DOMAIN_NAME))
+        print("   For Facebook API (public access): Use ngrok tunnel")
+        print("2. Set up public access with ngrok (if needed):")
+        print("   chmod +x setup_ngrok.sh")
+        print("   ./setup_ngrok.sh start")
+        print("   ./setup_ngrok.sh status")
+        print("3. Set verify token in your app configuration")
+        print("4. Test webhook with Facebook's webhook tester")
+        print("5. Monitor logs: docker logs {}".format(DOCKER_CONTAINER_NAME))
+        print("6. Check service status: systemctl status apache2")
+        print("7. Manage service: whatsapp-service {{start|stop|status|logs|health}}")
+        print("")
+        print("Network Configuration:")
+        print("- SANDBOX Network ({}): {}".format(NIC_SANDBOX, SERVER_IP_SANDBOX))
+        print("- INTERNET Network ({}): {}".format(NIC_INTERNET, SERVER_IP_INTERNET))
+        print("- Ngrok Enabled: {}".format("Yes" if USE_NGROK else "No"))
         print("")
         print("Configuration Management:")
         print("- Edit configuration: nano .env")
         print("- Reload configuration: python3 config2.py")
         print("- View current config: whatsapp-service status")
+        print("- Ngrok tunnel control:")
+        print("  * Start tunnel: ./setup_ngrok.sh start")
+        print("  * Stop tunnel: ./setup_ngrok.sh stop") 
+        print("  * Check status: ./setup_ngrok.sh status")
+        print("  * Auto-manage: Set USE_NGROK=true/false in .env, then run python3 config2.py")
         print("="*60)
         
     except Exception as e:
