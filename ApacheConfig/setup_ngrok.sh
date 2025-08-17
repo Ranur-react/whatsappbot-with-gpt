@@ -48,72 +48,67 @@ install_ngrok() {
     echo_header "=== INSTALLING NGROK ==="
     
     if command -v ngrok &> /dev/null; then
-        echo_info "ngrok is already installed"
-        ngrok version
+        echo_info "Ngrok is already installed: $(ngrok version)"
         return 0
     fi
     
     echo_info "Installing ngrok..."
     
-    # Download ngrok
-    wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -O /tmp/ngrok.tgz
+    # Install ngrok using official repository
+    curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+        | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
+        && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+        | sudo tee /etc/apt/sources.list.d/ngrok.list \
+        && sudo apt update \
+        && sudo apt install ngrok -y
     
-    # Extract and install
-    sudo tar -xzf /tmp/ngrok.tgz -C /usr/local/bin/
-    sudo chmod +x /usr/local/bin/ngrok
-    
-    # Cleanup
-    rm /tmp/ngrok.tgz
-    
-    echo_info "ngrok installed successfully"
-    ngrok version
+    if command -v ngrok &> /dev/null; then
+        echo_info "✅ Ngrok installed successfully: $(ngrok version)"
+    else
+        echo_error "❌ Ngrok installation failed"
+        exit 1
+    fi
 }
 
 # Configure ngrok
 configure_ngrok() {
     echo_header "=== CONFIGURING NGROK ==="
     
-    # Check if authtoken is provided
-    if [ -z "$NGROK_AUTHTOKEN" ]; then
-        echo_warn "NGROK_AUTHTOKEN not found in .env"
-        echo_warn "Please get your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken"
+    # Add authtoken - your actual token
+    echo_info "Adding ngrok authtoken..."
+    ngrok config add-authtoken 31P0rvQ8QZ707JvEFXkBV9noZIk_2bZK5JkQYGVmuEywj9MeC
+    
+    if [ $? -eq 0 ]; then
+        echo_info "✅ Authtoken configured successfully"
+    else
+        echo_error "❌ Failed to configure authtoken"
+        exit 1
+    fi
         echo_warn "Then add NGROK_AUTHTOKEN=your_token_here to .env file"
         
         read -p "Enter your ngrok authtoken (or press Enter to skip): " token
-        if [ ! -z "$token" ]; then
-            echo "" >> .env
-            echo "# Ngrok Configuration" >> .env
-            echo "NGROK_AUTHTOKEN=$token" >> .env
-            export NGROK_AUTHTOKEN=$token
-        else
-            echo_warn "Skipping ngrok authentication setup"
-            return 1
-        fi
-    fi
     
-    # Authenticate ngrok
-    ngrok config add-authtoken $NGROK_AUTHTOKEN
-    echo_info "ngrok authenticated successfully"
-    
-    # Create ngrok configuration file
+    # Create ngrok configuration file for Docker container
     mkdir -p ~/.ngrok2
     cat > ~/.ngrok2/ngrok.yml << EOF
 version: "2"
-authtoken: ${NGROK_AUTHTOKEN}
+authtoken: 31P0rvQ8QZ707JvEFXkBV9noZIk_2bZK5JkQYGVmuEywj9MeC
 region: ${NGROK_REGION:-ap}
 console_ui: true
 console_ui_color: transparent
 tunnels:
   whatsapp-webhook:
-    proto: https
-    addr: "botdev-owhub.totalbp.com:443"
-    host_header: "botdev-owhub.totalbp.com"
+    proto: http
+    addr: "localhost:${DOCKER_INTERNAL_PORT:-3000}"
+    host_header: rewrite
     bind_tls: true
     inspect: true
-    metadata: "WhatsApp Webhook Service - TotalBP"
+    metadata: "WhatsApp Webhook Service - TotalBP OWHUB"
+    subdomain: "${NGROK_SUBDOMAIN:-totalbp-owhub-webhook}"
 EOF
     
-    echo_info "ngrok configuration created"
+    echo_info "✅ Ngrok configuration created for Docker container port ${DOCKER_INTERNAL_PORT:-3000}"
+}
 }
 
 # Start ngrok tunnel
@@ -128,9 +123,11 @@ start_ngrok() {
         return 0
     fi
     
-    # Start ngrok in background
-    echo_info "Starting ngrok tunnel..."
-    nohup ngrok start whatsapp-webhook > /var/log/ngrok.log 2>&1 &
+    # Start ngrok in background - pointing to Docker container
+    echo_info "Starting ngrok tunnel for Docker container on port ${DOCKER_INTERNAL_PORT:-3000}..."
+    
+    # Use simple command like provided: ngrok http http://localhost:3000
+    nohup ngrok http http://localhost:${DOCKER_INTERNAL_PORT:-3000} --region=${NGROK_REGION:-ap} --subdomain=${NGROK_SUBDOMAIN:-totalbp-owhub-webhook} > /var/log/ngrok.log 2>&1 &
     
     # Wait for ngrok to start
     echo_info "Waiting for ngrok to establish tunnel..."
@@ -256,6 +253,13 @@ show_setup_guide() {
 # Main script logic
 main() {
     case "$1" in
+        install)
+            install_ngrok
+            ;;
+        configure)
+            load_env
+            configure_ngrok
+            ;;
         start)
             load_env
             install_ngrok
@@ -279,6 +283,11 @@ main() {
             load_env
             status_ngrok
             ;;
+        test)
+            load_env
+            echo_header "=== TESTING DOCKER & NGROK CONNECTIVITY ==="
+            ./test_docker_ngrok.sh
+            ;;
         guide)
             load_env
             show_setup_guide
@@ -288,20 +297,27 @@ main() {
             ;;
         *)
             echo "WhatsApp Webhook Ngrok Manager"
-            echo "Usage: $0 {start|stop|restart|status|guide|install}"
+            echo "Usage: $0 {install|configure|start|stop|restart|status|test|guide}"
             echo ""
             echo "Commands:"
-            echo "  start    - Install and start ngrok tunnel"
-            echo "  stop     - Stop ngrok tunnel"
-            echo "  restart  - Restart ngrok tunnel"
-            echo "  status   - Show ngrok status and tunnel URLs"
-            echo "  guide    - Show WhatsApp webhook setup guide"
-            echo "  install  - Install ngrok only"
+            echo "  install   - Install ngrok from official repository"
+            echo "  configure - Configure ngrok with authtoken"
+            echo "  start     - Start ngrok tunnel for Docker container"
+            echo "  stop      - Stop ngrok tunnel"
+            echo "  restart   - Restart ngrok tunnel"
+            echo "  status    - Show ngrok status and tunnel URLs"
+            echo "  test      - Test Docker container and ngrok connectivity"
+            echo "  guide     - Show WhatsApp webhook setup guide"
+            echo ""
+            echo "Docker Configuration:"
+            echo "  - Container: ${DOCKER_CONTAINER_NAME:-node1}"
+            echo "  - Port: ${DOCKER_INTERNAL_PORT:-3000}"
+            echo "  - Webhook: http://localhost:${DOCKER_INTERNAL_PORT:-3000}/webhook"
             echo ""
             echo "Network Configuration:"
-            echo "  - SANDBOX (ens120): Local development"
-            echo "  - INTERNET (ens192): Public access (via ngrok)"
-            echo "  - HAProxy: Will be configured later for production"
+            echo "  - SANDBOX (ens120): Internal development & testing"
+            echo "  - INTERNET (ens192): Public access via ngrok tunnel"
+            echo "  - Future: HAProxy for enterprise routing"
             exit 1
             ;;
     esac
