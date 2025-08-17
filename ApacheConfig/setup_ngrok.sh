@@ -31,6 +31,7 @@ echo_header() {
     echo -e "${BLUE}$1${NC}"
 }
 
+
 # Load environment variables
 load_env() {
     if [ -f .env ]; then

@@ -18,7 +18,7 @@ else
     echo "❌ .env file not found!"
     exit 1
 fi
-
+ 
 echo "==============================================="
 echo "🧪 TESTING NGROK MANAGEMENT AUTOMATION"
 echo "==============================================="
