@@ -31,6 +31,72 @@ echo_header() {
     echo -e "${BLUE}$1${NC}"
 }
 
+# Cleanup function for complete ngrok removal
+cleanup_ngrok() {
+    echo_header "=== COMPLETE NGROK CLEANUP ==="
+    
+    # Stop any running ngrok processes
+    stop_ngrok
+    
+    # Kill any remaining ngrok processes
+    echo_info "Killing any remaining ngrok processes..."
+    sudo pkill -f ngrok 2>/dev/null || true
+    sudo killall ngrok 2>/dev/null || true
+    
+    # Remove ngrok binary and system files
+    echo_info "Removing ngrok installation..."
+    sudo apt remove --purge ngrok -y 2>/dev/null || true
+    sudo rm -f /usr/local/bin/ngrok 2>/dev/null || true
+    sudo rm -f /usr/bin/ngrok 2>/dev/null || true
+    
+    # Remove ngrok configuration
+    echo_info "Removing ngrok configuration..."
+    rm -rf ~/.ngrok2 2>/dev/null || true
+    rm -rf ~/.config/ngrok 2>/dev/null || true
+    rm -f ~/ngrok.yml 2>/dev/null || true
+    
+    # Remove ngrok repository and keys
+    echo_info "Removing ngrok repository..."
+    sudo rm -f /etc/apt/sources.list.d/ngrok.list 2>/dev/null || true
+    sudo rm -f /etc/apt/trusted.gpg.d/ngrok.asc 2>/dev/null || true
+    
+    # Update apt cache
+    echo_info "Updating package cache..."
+    sudo apt update 2>/dev/null || true
+    
+    # Remove any ngrok related files in current directory
+    echo_info "Removing local ngrok files..."
+    rm -f ngrok.log 2>/dev/null || true
+    rm -f nohup.out 2>/dev/null || true
+    rm -f .ngrok_url 2>/dev/null || true
+    rm -f .ngrok_pid 2>/dev/null || true
+    
+    # Clean up any ngrok systemd services (if any)
+    sudo systemctl stop ngrok 2>/dev/null || true
+    sudo systemctl disable ngrok 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/ngrok.service 2>/dev/null || true
+    sudo systemctl daemon-reload 2>/dev/null || true
+    
+    echo_info "✅ Complete ngrok cleanup finished!"
+    echo_warn "All ngrok files, processes, and configurations removed"
+}
+
+# Uninstall ngrok completely
+uninstall_ngrok() {
+    echo_header "=== UNINSTALLING NGROK ==="
+    
+    # Confirm uninstall
+    read -p "Are you sure you want to completely remove ngrok? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo_warn "Uninstall cancelled"
+        return 0
+    fi
+    
+    cleanup_ngrok
+    
+    echo_info "🗑️  Ngrok has been completely uninstalled from the system"
+}
 
 # Load environment variables
 load_env() {
@@ -295,9 +361,15 @@ main() {
         install)
             install_ngrok
             ;;
+        cleanup)
+            cleanup_ngrok
+            ;;
+        uninstall)
+            uninstall_ngrok
+            ;;
         *)
             echo "WhatsApp Webhook Ngrok Manager"
-            echo "Usage: $0 {install|configure|start|stop|restart|status|test|guide}"
+            echo "Usage: $0 {install|configure|start|stop|restart|status|test|guide|cleanup|uninstall}"
             echo ""
             echo "Commands:"
             echo "  install   - Install ngrok from official repository"
@@ -307,6 +379,8 @@ main() {
             echo "  restart   - Restart ngrok tunnel"
             echo "  status    - Show ngrok status and tunnel URLs"
             echo "  test      - Test Docker container and ngrok connectivity"
+            echo "  cleanup   - Clean up all ngrok processes and temp files"
+            echo "  uninstall - Completely remove ngrok from system"
             echo "  guide     - Show WhatsApp webhook setup guide"
             echo ""
             echo "Docker Configuration:"

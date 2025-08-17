@@ -992,23 +992,30 @@ def manage_ngrok_service():
                 print(f"⚠ Failed to start ngrok: {result.stderr}")
                 
         else:
-            print("✓ USE_NGROK=false - Stopping ngrok tunnel...")
-            # Stop ngrok service
+            print("✓ USE_NGROK=false - Performing complete ngrok cleanup...")
+            
+            # First stop ngrok
             result = subprocess.run(['/bin/bash', ngrok_script, 'stop'], 
                                    capture_output=True, text=True, timeout=30)
             
-            if result.returncode == 0:
-                print("✅ Ngrok tunnel stopped successfully")
+            # Then perform complete cleanup
+            cleanup_result = subprocess.run(['/bin/bash', ngrok_script, 'cleanup'], 
+                                          capture_output=True, text=True, timeout=60)
+            
+            if cleanup_result.returncode == 0:
+                print("✅ Complete ngrok cleanup performed")
+                print("🗑️  All ngrok processes, files, and configurations removed")
             else:
-                print(f"⚠ Failed to stop ngrok: {result.stderr}")
-                
-            # Verify ngrok is stopped
-            verify_result = subprocess.run(['/bin/bash', ngrok_script, 'status'], 
-                                         capture_output=True, text=True, timeout=10)
-            if "No active tunnels" in verify_result.stdout or verify_result.returncode != 0:
-                print("✅ Confirmed: No active ngrok tunnels")
-            else:
-                print("⚠ Warning: Some ngrok processes may still be running")
+                print(f"⚠ Failed to cleanup ngrok: {cleanup_result.stderr}")
+                # Try manual cleanup
+                print("Attempting manual cleanup...")
+                try:
+                    # Kill any ngrok processes
+                    subprocess.run(['sudo', 'pkill', '-f', 'ngrok'], check=False)
+                    subprocess.run(['sudo', 'killall', 'ngrok'], check=False)
+                    print("✅ Manual process cleanup completed")
+                except Exception as e:
+                    print(f"⚠ Manual cleanup warning: {e}")
                 
     except subprocess.TimeoutExpired:
         print("⚠ Ngrok command timed out")
@@ -1419,6 +1426,25 @@ def main():
         # Manage ngrok based on configuration
         manage_ngrok_service()
         
+        # If USE_NGROK=false, run cleanup verification
+        if not USE_NGROK:
+            cleanup_test_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_ngrok_cleanup.sh')
+            if os.path.exists(cleanup_test_script):
+                print("\n" + "="*60)
+                print("Running ngrok cleanup verification...")
+                print("="*60)
+                try:
+                    result = subprocess.run(['/bin/bash', cleanup_test_script], 
+                                          capture_output=True, text=True, timeout=30)
+                    print(result.stdout)
+                    if result.returncode == 0:
+                        print("✅ Ngrok cleanup verification PASSED")
+                    else:
+                        print("⚠ Ngrok cleanup verification FAILED")
+                        print(result.stderr)
+                except Exception as e:
+                    print(f"⚠ Could not run cleanup verification: {e}")
+        
         # Run deployment test
         print("\n" + "="*60)
         print("Running deployment test to verify everything is working...")
@@ -1445,9 +1471,12 @@ def main():
         print("   chmod +x setup_ngrok.sh")
         print("   ./setup_ngrok.sh start")
         print("   ./setup_ngrok.sh status")
-        print("3. Set verify token in your app configuration")
-        print("4. Test webhook with Facebook's webhook tester")
-        print("5. Monitor logs: docker logs {}".format(DOCKER_CONTAINER_NAME))
+        print("3. Remove ngrok completely (when no longer needed):")
+        print("   Set USE_NGROK=false in .env, then run: python3 config2.py")
+        print("   Or manually: ./setup_ngrok.sh uninstall")
+        print("4. Set verify token in your app configuration")
+        print("5. Test webhook with Facebook's webhook tester")
+        print("6. Monitor logs: docker logs {}".format(DOCKER_CONTAINER_NAME))
         print("6. Check service status: systemctl status apache2")
         print("7. Manage service: whatsapp-service {{start|stop|status|logs|health}}")
         print("")
