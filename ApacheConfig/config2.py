@@ -106,6 +106,74 @@ ENABLE_ERROR_LOG = ENV_CONFIG.get('ENABLE_ERROR_LOG', 'true').lower() == 'true'
 DEBUG_MODE = ENV_CONFIG.get('DEBUG_MODE', 'false').lower() == 'true'
 SKIP_SSL_VERIFICATION = ENV_CONFIG.get('SKIP_SSL_VERIFICATION', 'false').lower() == 'true'
 
+def secure_file_permissions():
+    """Set secure file permissions for configuration files and scripts"""
+    print("\n=== Setting Secure File Permissions ===")
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    current_user = os.getenv('USER') or os.getenv('USERNAME')
+    
+    # Files to secure with their recommended permissions
+    files_to_secure = {
+        '.env': 0o600,           # Read/write for owner only
+        'config2.py': 0o700,     # Execute for owner only  
+        'setup_ngrok.sh': 0o750, # Execute for owner + group
+        'test_ngrok_cleanup.sh': 0o750,
+        'quick_ngrok_cleanup.sh': 0o750,
+        'set_permissions.sh': 0o750
+    }
+    
+    secured_files = []
+    failed_files = []
+    
+    for filename, permission in files_to_secure.items():
+        filepath = os.path.join(current_dir, filename)
+        
+        if os.path.exists(filepath):
+            try:
+                # Set file permissions
+                os.chmod(filepath, permission)
+                
+                # Get permission string for display
+                perm_str = oct(permission)[-3:]
+                secured_files.append(f"✅ {filename} - {perm_str}")
+                
+            except OSError as e:
+                failed_files.append(f"⚠ {filename} - Failed: {e}")
+        else:
+            failed_files.append(f"⚠ {filename} - File not found")
+    
+    # Display results
+    if secured_files:
+        print("Successfully secured files:")
+        for file_info in secured_files:
+            print(f"  {file_info}")
+    
+    if failed_files:
+        print("Files that could not be secured:")
+        for file_info in failed_files:
+            print(f"  {file_info}")
+    
+    # Security recommendations
+    print("\nSecurity recommendations applied:")
+    print("- .env file: 600 (owner read/write only)")
+    print("- config2.py: 700 (owner execute only)")
+    print("- Shell scripts: 750 (owner + group execute)")
+    
+    if current_user:
+        print(f"- Files secured for user: {current_user}")
+    
+    return len(failed_files) == 0
+
+# Development Options
+LOG_LEVEL = ENV_CONFIG.get('LOG_LEVEL', 'info')
+ENABLE_ACCESS_LOG = ENV_CONFIG.get('ENABLE_ACCESS_LOG', 'true').lower() == 'true'
+ENABLE_ERROR_LOG = ENV_CONFIG.get('ENABLE_ERROR_LOG', 'true').lower() == 'true'
+
+# Development Options
+DEBUG_MODE = ENV_CONFIG.get('DEBUG_MODE', 'false').lower() == 'true'
+SKIP_SSL_VERIFICATION = ENV_CONFIG.get('SKIP_SSL_VERIFICATION', 'false').lower() == 'true'
+
 print("Configuration Summary:")
 print("- Domain: {}".format(DOMAIN_NAME))
 print("- SANDBOX IP ({}): {}".format(NIC_SANDBOX, SERVER_IP_SANDBOX))
@@ -1358,6 +1426,10 @@ def main():
         show_ssl_migration_guide()
     
     try:
+        # Set secure file permissions first
+        if not secure_file_permissions():
+            print("⚠️  Some files could not be secured. Continuing with deployment...")
+        
         backup_apache_config()
         install_dependencies()
         check_docker_status()
