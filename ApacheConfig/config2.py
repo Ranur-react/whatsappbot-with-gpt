@@ -61,6 +61,7 @@ ADMIN_EMAIL = ENV_CONFIG.get('ADMIN_EMAIL', 'admin@localhost')
 # Network Interface Configuration
 NIC_SANDBOX = ENV_CONFIG.get('NIC_SANDBOX', 'ens120')
 NIC_INTERNET = ENV_CONFIG.get('NIC_INTERNET', 'ens192')
+NIC_INTERNET_ENABLED = ENV_CONFIG.get('NIC_INTERNET_ENABLED', 'true').lower() == 'true'
 
 # Public Access Configuration
 USE_NGROK = ENV_CONFIG.get('USE_NGROK', 'false').lower() == 'true'
