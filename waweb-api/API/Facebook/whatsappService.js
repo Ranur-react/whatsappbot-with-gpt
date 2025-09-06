@@ -1,3 +1,4 @@
+import { log } from 'console';
 import { axiosInstance } from '../../Helper/Axios/index.js';
 import { WhatsAppLogger } from '../../Helper/middleware.js';
 
@@ -50,18 +51,22 @@ export const sendButtonMessage = async (phoneId, userId, text, buttons) => {
 
 export const sendTemplateMessage = async (phoneId, userId, templateName, templateHeaderType="text", templateImageLink=null) => {
     try {
-        const data = {};
-        if (templateHeaderType === "image" && !templateImageLink) {
-            data = {
-                messaging_product: "whatsapp",
-                to: userId,
-                type: "template",
-                template: {
-                    name: templateName,
-                    language: { code: "id" }
-                },
-                components: 
-                [
+        WhatsAppLogger.logApiCall('POST', `${phoneId}/messages`, "Started", 'calling');
+    let data = {};
+    if (templateHeaderType == "image") {
+        if (!templateImageLink) {
+            throw new Error("templateImageLink is required when templateHeaderType is 'image'");
+        }
+        WhatsAppLogger.logApiCall('POST', templateHeaderType, "Declare Variable of Data template with image header ", 'calling');
+
+        data = {
+            messaging_product: "whatsapp",
+            to: userId,
+            type: "template",
+            template: {
+                name: templateName,
+                language: { code: "id" },
+                components: [
                     {
                         type: "header",
                         parameters: [
@@ -69,14 +74,16 @@ export const sendTemplateMessage = async (phoneId, userId, templateName, templat
                                 type: "image",
                                 image: {
                                     link: templateImageLink
-                                        }
+                                }
                             }
                         ]
                     }
                 ]
-            };
-        }
-        else{
+            }
+        };
+        WhatsAppLogger.logApiCall('POST', JSON.stringify(data), "Goten Variable of Data ", 'calling');
+    } else {
+        WhatsAppLogger.logApiCall('POST', templateHeaderType, "Declare Variable of Data template without header ", 'calling');
         data = {
             messaging_product: "whatsapp",
             to: userId,
@@ -85,15 +92,12 @@ export const sendTemplateMessage = async (phoneId, userId, templateName, templat
                 name: templateName,
                 language: { code: "id" }
             }
-            
         };
     }
-        
-        WhatsAppLogger.logApiCall('POST', `${phoneId}/messages`, data, 'calling');
         await api.post(`${phoneId}/messages`, data);
-        WhatsAppLogger.logTemplateMessage(userId, templateName, 'success');
+        WhatsAppLogger.logTemplateMessage(userId,  phoneId+":"+templateName+" :"+templateHeaderType+" :"+templateImageLink, 'success');
     } catch (error) {
-        WhatsAppLogger.logTemplateMessage(userId, templateName, 'error');
+        WhatsAppLogger.logTemplateMessage(userId, phoneId+":"+templateName+" :"+templateHeaderType+" :"+templateImageLink, 'error');
         WhatsAppLogger.logError('sendTemplateMessage', error, userId);
         throw error;
     }

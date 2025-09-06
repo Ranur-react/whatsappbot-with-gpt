@@ -11,7 +11,7 @@ export function axiosInstance({
     contentType = 'application/json',
     extraHeaders = {},
 } = {}) {
-    return axios.create({
+    const instance = axios.create({
         baseURL,
         headers: {
             Authorization: token ? `Bearer ${token}` : undefined,
@@ -19,6 +19,18 @@ export function axiosInstance({
             ...extraHeaders,
         },
     });
+
+    instance.interceptors.response.use(
+        response => response,
+        error => {
+            if (error.response && error.response.status !== 200) {
+                console.log('API Error Response:', error.response.data);
+            }
+            return Promise.reject(error);
+        }
+    );
+
+    return instance;
 }
 
 // Contoh penggunaan:
