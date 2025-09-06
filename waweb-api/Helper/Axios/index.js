@@ -6,7 +6,7 @@ dotenv.config();
 const { GRAPH_API_TOKEN } = process.env;
 
 export function axiosInstance({
-    baseURL = 'https://graphs.facebook.com/v18.0/',
+    baseURL = 'https://graph.facebook.com/v22.0/',
     token = GRAPH_API_TOKEN,
     contentType = 'application/json',
     extraHeaders = {},

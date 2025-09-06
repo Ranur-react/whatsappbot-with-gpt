@@ -1,5 +1,12 @@
-import { sendTemplateMessage } from '../API/Facebook/whatsappService.js';
+import { sendTemplateMessage, sendTextMessage } from '../API/Facebook/whatsappService.js';
 import { WhatsAppLogger } from '../Helper/middleware.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const templateName = process.env.WELCOME_TEMPLATE_NAME || '2_perkenalan';
+const templateHeaderType = process.env.WELCOME_TEMPLATE_HEADER_TYPE || 'text';
+const templateImageLink = process.env.WELCOME_TEMPLATE_IMAGE_LINK || 'https://i.ibb.co/0j3m0sK/welcome-to-absensi-bot.png';
 
 // Webhook untuk verifikasi WhatsApp API
 export const handleWebhookGet = (req, res) => {
@@ -31,9 +38,23 @@ export const handleWebhookPost = async (req, res) => {
 
             // Log pesan masuk
             WhatsAppLogger.logIncomingMessage(userId, messageText, message.type);
+            
+            // Debug log untuk melihat businessPhoneNumberId
+            console.log('🔍 DEBUG businessPhoneNumberId:', businessPhoneNumberId);
+            console.log('🔍 DEBUG req.body:', JSON.stringify(req.body, null, 2));
 
-            // Balas dengan WelcomeTemplate
-            await sendTemplateMessage(userId, 'WelcomeTemplate');
+            // Pastikan businessPhoneNumberId tidak undefined
+            if (!businessPhoneNumberId) {
+                console.log('❌ businessPhoneNumberId tidak ditemukan dalam webhook payload');
+                res.sendStatus(400);
+                return;
+            }
+
+            // Test dengan text message terlebih dahulu
+            // await sendTextMessage(businessPhoneNumberId, userId, 'Halo! Terima kasih atas pesan Anda. Ini adalah balasan otomatis.');
+            
+            // Balas dengan WelcomeTemplate menggunakan phoneId yang benar
+            await sendTemplateMessage(businessPhoneNumberId, userId, templateName, templateHeaderType, templateImageLink);
         }
         
         res.sendStatus(200);

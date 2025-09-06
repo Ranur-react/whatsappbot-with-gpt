@@ -11,7 +11,7 @@ const userStates = new Map();
 const getUserState = (userId) => userStates.get(userId) || { currentState: "" };
 const setUserState = (userId, state) => userStates.set(userId, state);
 const resetUserState = (userId) => userStates.delete(userId);
-const sendTemplateMessage = async (userId,templateName) => {
+const sendTemplateMessage = async (phoneId, userId, templateName) => {
     let data = JSON.stringify({
         "messaging_product": "whatsapp",
         "to": userId,
@@ -25,7 +25,7 @@ const sendTemplateMessage = async (userId,templateName) => {
     });
 
     try {
-        const response = await axiosInstance.post('269270049609670/messages', data, {
+        const response = await axiosInstance.post(`${phoneId}/messages`, data, {
             headers: { 'Content-Type': 'application/json' }
         });
         console.log("Template message sent successfully:", JSON.stringify(response.data));
@@ -47,13 +47,13 @@ export const handleWebhookPost = async (req, res) => {
         const messageText = message?.text?.body || message?.button?.text || "";
 
         if (messageText.toLowerCase() == "home" || messageText.toLowerCase() == "Home") {
-            await sendTemplateMessage(userId, "absensi_intro");
+            await sendTemplateMessage(businessPhoneNumberId, userId, "absensi_intro");
             resetUserState(userId);
             res.sendStatus(200);
             return;
         }
         if (messageText.toLowerCase() === "GPT" || messageText.toLowerCase() === "gpt" || messageText.toLowerCase() === "reset" || messageText.toLowerCase() === "Reset") {
-            await sendTemplateMessage(userId, "absensi_intro");
+            await sendTemplateMessage(businessPhoneNumberId, userId, "absensi_intro");
             resetUserState(userId);
             res.sendStatus(200);
             return;

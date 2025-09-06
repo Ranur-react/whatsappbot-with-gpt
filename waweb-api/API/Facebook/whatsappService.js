@@ -48,9 +48,36 @@ export const sendButtonMessage = async (phoneId, userId, text, buttons) => {
     }
 };
 
-export const sendTemplateMessage = async (userId, templateName) => {
+export const sendTemplateMessage = async (phoneId, userId, templateName, templateHeaderType="text", templateImageLink=null) => {
     try {
-        const data = {
+        const data = {};
+        if (templateHeaderType === "image" && !templateImageLink) {
+            data = {
+                messaging_product: "whatsapp",
+                to: userId,
+                type: "template",
+                template: {
+                    name: templateName,
+                    language: { code: "id" }
+                },
+                components: 
+                [
+                    {
+                        type: "header",
+                        parameters: [
+                            {
+                                type: "image",
+                                image: {
+                                    link: templateImageLink
+                                        }
+                            }
+                        ]
+                    }
+                ]
+            };
+        }
+        else{
+        data = {
             messaging_product: "whatsapp",
             to: userId,
             type: "template",
@@ -58,10 +85,12 @@ export const sendTemplateMessage = async (userId, templateName) => {
                 name: templateName,
                 language: { code: "id" }
             }
+            
         };
+    }
         
-        WhatsAppLogger.logApiCall('POST', '269270049609670/messages', data, 'calling');
-        await api.post('269270049609670/messages', data);
+        WhatsAppLogger.logApiCall('POST', `${phoneId}/messages`, data, 'calling');
+        await api.post(`${phoneId}/messages`, data);
         WhatsAppLogger.logTemplateMessage(userId, templateName, 'success');
     } catch (error) {
         WhatsAppLogger.logTemplateMessage(userId, templateName, 'error');
