@@ -19,3 +19,11 @@ EXPOSE 3000
 
 # Start the Node.js app
 CMD ["npm", "start"]
+
+
+
+
+
+RUN echo "nameserver 1.1.1.1" >> /etc/resolv.confRUN echo "nameserver 8.8.8.8" > /etc/resolv.conf# Update DNS settings# Update DNS settings
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf
+RUN echo "nameserver 1.1.1.1" >> /etc/resolv.conf
