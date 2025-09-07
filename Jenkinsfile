@@ -80,7 +80,7 @@ pipeline {
         }
         stage('Run New Container') {
             steps {
-                sh 'docker run -d --name node1 -p 3000:3000 waweb-api'
+                sh 'docker run -d --name node1 --network=host  -p 3000:3000 waweb-api'
             }
         }
     }
