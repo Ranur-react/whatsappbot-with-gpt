@@ -77,8 +77,8 @@ pipeline {
         }
         stage('Run New Container') {
             steps {
-                // sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
-                sh 'docker run -d --name node1  -p 3000:3000 --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
+                // Gunakan network yang konsisten
+                sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
             }
         }
         stage('Expose via Ngrok') {
@@ -170,6 +170,24 @@ pipeline {
                             echo "Health check: ${e}"
                         }
                     }
+                }
+            }
+        }
+        stage('Network Diagnostics') {
+            steps {
+                script {
+                    echo "🔍 Running network diagnostics..."
+                    
+                    // Test DNS resolution dari container
+                    sh '''
+                    docker exec node1 nslookup graph.facebook.com || echo "DNS resolution failed"
+                    docker exec node1 ping -c 3 8.8.8.8 || echo "Ping to 8.8.8.8 failed"
+                    docker exec node1 curl -I https://graph.facebook.com/v18.0 --connect-timeout 10 || echo "Facebook API connection failed"
+                    '''
+                    
+                    // Check container network
+                    sh 'docker exec node1 cat /etc/resolv.conf'
+                    sh 'docker exec node1 ip route show'
                 }
             }
         }

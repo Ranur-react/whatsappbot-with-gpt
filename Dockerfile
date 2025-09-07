@@ -1,30 +1,51 @@
 # Use an official Node.js runtime as a parent image
-FROM node:latest
+FROM node:18-alpine
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_ENV=production
+
+# Install necessary packages for network resolution
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    && update-ca-certificates
 
 # Create app directory
 WORKDIR /usr/src/app
 
-# Install app dependencies
+# Copy package files
 COPY /waweb-api/package*.json ./
-RUN npm install
+
+# Configure npm for better network handling
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5
+
+# Install dependencies
+RUN npm install --production
 
 # Bundle app source
 COPY /waweb-api/. .
 
-# Expose the Node.js app port
+# Set Node.js options for better DNS resolution
+ENV NODE_OPTIONS="--dns-result-order=ipv4first --max-old-space-size=1024"
+
+# Expose port
 EXPOSE 3000
 
-# Start the Node.js app
-CMD ["npm", "start"]
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000 || exit 1
 
+# Create startup script with DNS setup
+RUN echo '#!/bin/sh\n\
+# Add public DNS servers\n\
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf\n\
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf\n\
+echo "nameserver 208.67.222.222" >> /etc/resolv.conf\n\
+# Start application\n\
+exec npm start' > /start.sh && chmod +x /start.sh
 
-
-
-
-
-# # Update DNS settings# Update DNS settings
-# RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf
-# RUN echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+CMD ["/start.sh"]
