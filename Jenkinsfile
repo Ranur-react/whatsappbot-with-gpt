@@ -31,7 +31,8 @@ pipeline {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'env_wa', variable: 'ENV_FILE')]) {
-                        sh 'cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
+                        sh 'sudo cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
+                        sh 'sudo chmod 644 whatsappbot-with-gpt/waweb-api/.env'
                         sh 'cat whatsappbot-with-gpt/waweb-api/.env'
                     }
                 }
