@@ -41,17 +41,25 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000 || exit 1
 
-# Create startup script with proper Alpine syntax
-RUN echo '#!/bin/sh' > /start.sh && \
-    echo '# Add public DNS servers' >> /start.sh && \
-    echo 'echo "nameserver 8.8.8.8" >> /etc/resolv.conf' >> /start.sh && \
-    echo 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf' >> /start.sh && \rver 1.1.1.1" >> /etc/resolv.conf' >> /start.sh && \
-    echo 'echo "nameserver 208.67.222.222" >> /etc/resolv.conf' >> /start.sh && \c/resolv.conf' >> /start.sh && \
-    echo '# Start application' >> /start.sh && \    echo '# Start application' >> /start.sh && \
-    echo 'exec npm start' >> /start.sh && \m start' >> /start.sh && \
-    chmod +x /start.sh    chmod +x /start.sh
+# Create startup script using cat for better control
+RUN cat > /start.sh << 'EOF'
+#!/bin/sh
+# Add public DNS servers
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+echo "nameserver 208.67.222.222" >> /etc/resolv.conf
 
+# Show DNS configuration
+echo "=== DNS Configuration ==="
+cat /etc/resolv.conf
 
+# Start application
+echo "=== Starting Application ==="
+exec npm start
+EOF
 
-CMD ["/start.sh"]
+# Make script executable
+RUN chmod +x /start.sh
+
+# Start with custom script
 CMD ["/start.sh"]
