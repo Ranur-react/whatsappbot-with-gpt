@@ -51,10 +51,10 @@ export const handleWebhookPost = async (req, res) => {
             }
 
             // Test dengan text message terlebih dahulu
-            await sendTextMessage(businessPhoneNumberId, userId, 'Halo! Terima kasih atas pesan Anda. Ini adalah balasan otomatis.');
+            // await sendTextMessage(businessPhoneNumberId, userId, 'Halo! Terima kasih atas pesan Anda. Ini adalah balasan otomatis.');
             
             // Balas dengan WelcomeTemplate menggunakan phoneId yang benar
-            // await sendTemplateMessage(businessPhoneNumberId, userId, templateName, templateHeaderType, templateImageLink);
+            await sendTemplateMessage(businessPhoneNumberId, userId, templateName, templateHeaderType, templateImageLink);
         }
         
         res.sendStatus(200);
