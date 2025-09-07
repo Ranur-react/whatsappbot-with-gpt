@@ -76,6 +76,14 @@ pipeline {
         stage('Run New Container') {
             steps {
                 script {
+                    // Create custom resolv.conf for DNS
+                    sh '''
+                    echo "nameserver 8.8.8.8" > /tmp/resolv.conf.custom
+                    echo "nameserver 1.1.1.1" >> /tmp/resolv.conf.custom
+                    echo "nameserver 208.67.222.222" >> /tmp/resolv.conf.custom
+                    echo "search ." >> /tmp/resolv.conf.custom
+                    '''
+                    
                     // Create custom bridge network with proper DNS
                     sh '''
                     docker network create --driver bridge \
@@ -85,17 +93,21 @@ pipeline {
                     wabot-network || echo "Network already exists"
                     '''
                     
-                    // Run container with custom network and explicit DNS
+                    // Run container with custom DNS configuration
                     sh '''
                     docker run -d --name node1 \
                     --network=wabot-network \
+                    -v /tmp/resolv.conf.custom:/etc/resolv.conf:ro \
                     --dns=8.8.8.8 \
                     --dns=1.1.1.1 \
                     --dns=208.67.222.222 \
                     --dns-search=. \
                     --dns-opt=ndots:1 \
+                    --dns-opt=timeout:5 \
+                    --dns-opt=attempts:3 \
                     -p 3000:3000 \
                     -e NODE_OPTIONS="--dns-result-order=ipv4first" \
+                    --cap-add=NET_ADMIN \
                     --restart=unless-stopped \
                     waweb-api
                     '''
