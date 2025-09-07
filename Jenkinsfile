@@ -18,21 +18,13 @@ pipeline {
                 }
             }
         }
-        // stage('Copy .env File') {
-        //     steps {
-        //         script {
-        //             sh 'cat /mnt/env-aset/wabot/owhub.env'
-        //             sh 'cp /mnt/env-aset/wabot/owhub.env whatsappbot-with-gpt/waweb-api/.env'
-        //             sh 'cat whatsappbot-with-gpt/waweb-api/.env'
-        //         }
-        //     }
-        // }
         stage('Copy .env File') {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'env_wa', variable: 'ENV_FILE')]) {
-                        sh 'sudo cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
-                        sh 'sudo chmod 644 whatsappbot-with-gpt/waweb-api/.env'
+                        sh 'sudo chown -R jenkins:jenkins whatsappbot-with-gpt/'
+                        sh 'sudo chmod -R 755 whatsappbot-with-gpt/'
+                        sh 'cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
                         sh 'cat whatsappbot-with-gpt/waweb-api/.env' 
                     }
                 }
