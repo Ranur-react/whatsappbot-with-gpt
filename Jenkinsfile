@@ -1,5 +1,3 @@
-
-
 pipeline {
     agent any
 
@@ -65,7 +63,7 @@ pipeline {
         stage('Build Docker New Image') {
             steps {
                 dir('whatsappbot-with-gpt') {
-                    sh 'docker build -t waweb-api .'
+                    sh 'docker build --dns=8.8.8.8 --dns=1.1.1.1 -t waweb-api .'
                 }
             }
         }
