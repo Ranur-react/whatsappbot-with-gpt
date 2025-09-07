@@ -20,12 +20,22 @@ pipeline {
                 }
             }
         }
+        // stage('Copy .env File') {
+        //     steps {
+        //         script {
+        //             sh 'cat /mnt/env-aset/wabot/owhub.env'
+        //             sh 'cp /mnt/env-aset/wabot/owhub.env whatsappbot-with-gpt/waweb-api/.env'
+        //             sh 'cat whatsappbot-with-gpt/waweb-api/.env'
+        //         }
+        //     }
+        // }
         stage('Copy .env File') {
             steps {
                 script {
-                    sh 'cat /mnt/env-aset/wabot/owhub.env'
-                    sh 'cp /mnt/env-aset/wabot/owhub.env whatsappbot-with-gpt/waweb-api/.env'
-                    sh 'cat whatsappbot-with-gpt/waweb-api/.env'
+                    withCredentials([file(credentialsId: 'env_wa', variable: 'ENV_FILE')]) {
+                        sh 'cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
+                        sh 'cat whatsappbot-with-gpt/waweb-api/.env'
+                    }
                 }
             }
         }
