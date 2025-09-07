@@ -22,60 +22,59 @@ pipeline {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'env_wa', variable: 'ENV_FILE')]) {
-                        sh 'sudo chown -R jenkins:jenkins whatsappbot-with-gpt/'
-                        sh 'sudo chmod -R 755 whatsappbot-with-gpt/'
-                        sh 'cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'
+                        sh 'chmod -R 755 whatsappbot-with-gpt/'
+                        sh 'cp $ENV_FILE whatsappbot-with-gpt/waweb-api/.env'api/.env'
                         sh 'cat whatsappbot-with-gpt/waweb-api/.env' 
                     }
                 }
             }
         }
-        stage('Container Renewal') {
+        stage('Container Renewal') {tage('Container Renewal') {
             steps {
-                script {
-                    try {
-                        sh 'docker stop node1'
+                script {ipt {
+                    try {{
+                        sh 'docker stop node1'h 'docker stop node1'
                         sh 'docker rm node1'
                     } catch (Exception e) {
-                        echo "Container node1 was not running or could not be stopped/removed: ${e}"
+                        echo "Container node1 was not running or could not be stopped/removed: ${e}"e1 was not running or could not be stopped/removed: ${e}"
                     }
                 }
             }
         }
-        stage('Image Renewal') {
+        stage('Image Renewal') {tage('Image Renewal') {
             steps {
-                script {
-                    try {
-                        sh 'docker rmi waweb-api'
+                script {ipt {
+                    try {{
+                        sh 'docker rmi waweb-api'h 'docker rmi waweb-api'
                     } catch (Exception e) {
-                        echo "Image waweb-api could not be removed: ${e}"
+                        echo "Image waweb-api could not be removed: ${e}"pi could not be removed: ${e}"
                     }
                 }
             }
         }
-        stage('Build Docker New Image') {
+        stage('Build Docker New Image') {tage('Build Docker New Image') {
             steps {
-                dir('whatsappbot-with-gpt') {
-                    sh 'docker build --dns=8.8.8.8 --dns=1.1.1.1 -t waweb-api .'
+                dir('whatsappbot-with-gpt') {('whatsappbot-with-gpt') {
+                    sh 'docker build --dns=8.8.8.8 --dns=1.1.1.1 -t waweb-api .'8.8.8 --dns=1.1.1.1 -t waweb-api .'
                     
                 }
             }
         }
-        stage('Run New Container') {
+        stage('Run New Container') {tage('Run New Container') {
             steps {
-                sh 'docker run -d --name node1 -p 3000:3000 waweb-api'
+                sh 'docker run -d --name node1 -p 3000:3000 waweb-api''docker run -d --name node1 -p 3000:3000 waweb-api'
             }
         }
     }
-    post {
-        always {
-            echo 'This will always run'
+    post {ost {
+        always {ways {
+            echo 'This will always run' 'This will always run'
         }
-        success {
-            echo 'This will run only if successful'
+        success {uccess {
+            echo 'This will run only if successful''This will run only if successful'
         }
-        failure {
-            echo 'This will run only if failed'
+        failure {ailure {
+            echo 'This will run only if failed''This will run only if failed'
         }
     }
 }
