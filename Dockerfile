@@ -41,25 +41,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000 || exit 1
 
-# Create startup script using cat for better control
-RUN cat > /start.sh << 'EOF'
-#!/bin/sh
-# Add public DNS servers
-echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-echo "nameserver 1.1.1.1" >> /etc/resolv.conf
-echo "nameserver 208.67.222.222" >> /etc/resolv.conf
-
-# Show DNS configuration
-echo "=== DNS Configuration ==="
-cat /etc/resolv.conf
-
-# Start application
-echo "=== Starting Application ==="
-exec npm start
-EOF
-
-# Make script executable
-RUN chmod +x /start.sh
-
-# Start with custom script
-CMD ["/start.sh"]
+# Start the application directly (tanpa custom script)
+CMD ["npm", "start"]
