@@ -28,15 +28,6 @@ pipeline {
                 }
             }
         }
-        // stage('Copy .env File') {
-        //     steps {
-        //         script {
-        //             sh 'cat /mnt/env-aset/wabot/owhub.env'
-        //             sh 'cp /mnt/env-aset/wabot/owhub.env whatsappbot-with-gpt/waweb-api/.env'
-        //             sh 'cat whatsappbot-with-gpt/waweb-api/.env'
-        //         }
-        //     }
-        // }
         stage('Copy .env File') {
             steps {
                 script {
@@ -56,6 +47,12 @@ pipeline {
                         sh 'docker rm node1'
                     } catch (Exception e) {
                         echo "Container node1 was not running or could not be stopped/removed: ${e}"
+                    }
+                    try {
+                        sh 'docker stop ngrok-tunnel'
+                        sh 'docker rm ngrok-tunnel'
+                    } catch (Exception e) {
+                        echo "Container ngrok-tunnel was not running or could not be stopped/removed: ${e}"
                     }
                 }
             }
@@ -83,16 +80,143 @@ pipeline {
                 sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
             }
         }
+        stage('Expose via Ngrok') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'ngrok-auth-token', variable: 'NGROK_TOKEN')]) {
+                        // Pull ngrok image
+                        sh 'docker pull ngrok/ngrok:latest'
+                        
+                        // Start ngrok dengan custom domain
+                        sh '''
+                        docker run -d --name ngrok-tunnel --net=host \
+                        -e NGROK_AUTHTOKEN=$NGROK_TOKEN \
+                        ngrok/ngrok:latest http --url=ungraphical-uranous-tambra.ngrok-free.app 3000
+                        '''
+                        
+                        sleep(10)
+                        
+                        // Check ngrok status dan tampilkan URL
+                        script {
+                            try {
+                                sh 'docker logs ngrok-tunnel'
+                                
+                                def customUrl = "https://ungraphical-uranous-tambra.ngrok-free.app"
+                                echo "🌐 WhatsApp Bot is accessible at: ${customUrl}"
+                                echo "🚀 Ngrok tunnel established successfully!"
+                                
+                                sh "echo '${customUrl}' > ngrok_url.txt"
+                                sh "echo 'WhatsApp Bot URL: ${customUrl}' > deployment_info.txt"
+                                
+                                // Verify ngrok API
+                                sh 'curl -f http://localhost:4040/api/tunnels || echo "⚠️  Ngrok API not responding"'
+                                
+                            } catch (Exception e) {
+                                echo "Error checking ngrok status: ${e}"
+                                sh 'docker logs ngrok-tunnel'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stage('Monitor Container Logs') {
+            steps {
+                script {
+                    echo "🔍 Starting container monitoring for 1 minute..."
+                    echo "📊 Container Status:"
+                    sh 'docker ps | grep -E "(node1|ngrok-tunnel)"'
+                    
+                    echo "📋 Initial Container Logs:"
+                    try {
+                        sh 'docker logs node1'
+                    } catch (Exception e) {
+                        echo "Could not get initial logs: ${e}"
+                    }
+                    
+                    echo "📈 Monitoring live logs for 60 seconds..."
+                    script {
+                        try {
+                            timeout(time: 60, unit: 'SECONDS') {
+                                sh '''
+                                echo "=== STARTING LIVE LOGS MONITORING ==="
+                                docker logs -f node1 &
+                                LOGS_PID=$!
+                                
+                                # Monitor selama 60 detik
+                                sleep 60
+                                
+                                # Kill logs process
+                                kill $LOGS_PID 2>/dev/null || true
+                                echo "=== LOGS MONITORING COMPLETED ==="
+                                '''
+                            }
+                        } catch (Exception e) {
+                            echo "Logs monitoring completed or interrupted: ${e}"
+                        }
+                    }
+                    
+                    echo "✅ Container monitoring completed"
+                    echo "📊 Final Container Status:"
+                    sh 'docker ps | grep -E "(node1|ngrok-tunnel)"'
+                    
+                    // Health check
+                    echo "🏥 Health Check:"
+                    script {
+                        try {
+                            sh 'curl -f http://localhost:3000/health 2>/dev/null || curl -f http://localhost:3000 2>/dev/null || echo "⚠️  Health check failed - container might still be starting"'
+                        } catch (Exception e) {
+                            echo "Health check: ${e}"
+                        }
+                    }
+                }
+            }
+        }
     }
     post {
         always {
-            echo 'This will always run'
+            echo 'Pipeline execution completed'
+            script {
+                try {
+                    echo "📋 Final Container Logs Summary:"
+                    sh 'docker logs --tail=20 node1 || echo "Could not get final logs"'
+                    echo "📊 Container Status:"
+                    sh 'docker ps | grep -E "(node1|ngrok-tunnel)" || echo "Containers not found"'
+                    
+                    if (fileExists('ngrok_url.txt')) {
+                        def url = readFile('ngrok_url.txt').trim()
+                        echo "📱 Your WhatsApp Bot is live at: ${url}"
+                    }
+                } catch (Exception e) {
+                    echo "Could not display final status: ${e}"
+                }
+            }
         }
         success {
-            echo 'This will run only if successful'
+            echo '✅ Deployment successful! WhatsApp Bot is ready at: https://ungraphical-uranous-tambra.ngrok-free.app'
+            script {
+                try {
+                    echo "🎉 Deployment completed successfully!"
+                    echo "🌐 Application accessible at: https://ungraphical-uranous-tambra.ngrok-free.app"
+                    echo "🏠 Local access: http://localhost:3000"
+                    sh 'docker inspect node1 --format="Container Status: {{.State.Status}}" || echo "Could not get container status"'
+                } catch (Exception e) {
+                    echo "Could not display success details: ${e}"
+                }
+            }
         }
         failure {
-            echo 'This will run only if failed'
+            echo '❌ Deployment failed. Check logs for details.'
+            script {
+                try {
+                    echo "🔍 Error Analysis:"
+                    sh 'docker logs --tail=50 node1 || echo "No node1 container logs available"'
+                    sh 'docker logs --tail=20 ngrok-tunnel || echo "No ngrok-tunnel container logs available"'
+                    sh 'docker ps -a | grep -E "(node1|ngrok-tunnel)" || echo "No containers found"'
+                } catch (Exception e) {
+                    echo "Could not display error logs: ${e}"
+                }
+            }
         }
     }
 }
