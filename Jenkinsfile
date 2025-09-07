@@ -9,8 +9,18 @@ pipeline {
                         dir('whatsappbot-with-gpt') {
                             sh 'git fetch'
                             sh 'git checkout tbp.owhub.1'
+                            // Stash any local changes before pulling
+                            sh 'git stash'
                             sh 'git config pull.rebase true'
                             sh 'git pull origin tbp.owhub.1'
+                            // Apply stashed changes back if needed
+                            script {
+                                try {
+                                    sh 'git stash pop'
+                                } catch (Exception e) {
+                                    echo "No stash to pop or merge conflict: ${e}"
+                                }
+                            }
                         }
                     } else {
                         sh 'git clone -b tbp.owhub.1 https://github.com/Ranur-react/whatsappbot-with-gpt.git'
