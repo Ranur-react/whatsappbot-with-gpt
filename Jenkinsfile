@@ -76,9 +76,31 @@ pipeline {
         stage('Run New Container') {
             steps {
                 script {
-                    sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 --dns=208.67.222.222 waweb-api'
+                    // Create custom bridge network with proper DNS
+                    sh '''
+                    docker network create --driver bridge \
+                    --subnet=172.20.0.0/16 \
+                    --gateway=172.20.0.1 \
+                    --opt com.docker.network.driver.mtu=1500 \
+                    wabot-network || echo "Network already exists"
+                    '''
                     
-                    // Wait and check if container is actually running
+                    // Run container with custom network and explicit DNS
+                    sh '''
+                    docker run -d --name node1 \
+                    --network=wabot-network \
+                    --dns=8.8.8.8 \
+                    --dns=1.1.1.1 \
+                    --dns=208.67.222.222 \
+                    --dns-search=. \
+                    --dns-opt=ndots:1 \
+                    -p 3000:3000 \
+                    -e NODE_OPTIONS="--dns-result-order=ipv4first" \
+                    --restart=unless-stopped \
+                    waweb-api
+                    '''
+                    
+                    // Wait for container to start
                     sleep(15)
                     
                     echo "🔍 Checking container status..."
@@ -98,10 +120,10 @@ pipeline {
                 }
             }
         }
-        stage('Network Diagnostics') {
+        stage('Network Diagnostics & Fix') {
             steps {
                 script {
-                    echo "🔍 Running network diagnostics..."
+                    echo "🔍 Running network diagnostics and fixes..."
                     
                     // Check if container is still running before diagnostics
                     def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
@@ -116,14 +138,28 @@ pipeline {
                     docker exec node1 cat /etc/resolv.conf || echo "❌ Could not read resolv.conf"
                     docker exec node1 ip route show || echo "❌ Could not show routes"
                     
+                    echo "=== Updating DNS in Container ==="
+                    docker exec node1 sh -c "echo 'nameserver 8.8.8.8' > /tmp/resolv.conf.new"
+                    docker exec node1 sh -c "echo 'nameserver 1.1.1.1' >> /tmp/resolv.conf.new"
+                    docker exec node1 sh -c "echo 'nameserver 208.67.222.222' >> /tmp/resolv.conf.new"
+                    docker exec node1 sh -c "echo 'search .' >> /tmp/resolv.conf.new"
+                    docker exec node1 sh -c "cp /tmp/resolv.conf.new /etc/resolv.conf" || echo "Could not update resolv.conf"
+                    
+                    echo "=== Updated DNS Configuration ==="
+                    docker exec node1 cat /etc/resolv.conf
+                    
                     echo "=== DNS Resolution Test ==="
-                    docker exec node1 nslookup graph.facebook.com || echo "❌ DNS resolution failed"
+                    docker exec node1 nslookup graph.facebook.com 8.8.8.8 || echo "❌ DNS resolution failed"
+                    docker exec node1 dig @8.8.8.8 graph.facebook.com || echo "❌ Dig failed"
                     
                     echo "=== Network Connectivity Test ==="
                     docker exec node1 ping -c 3 8.8.8.8 || echo "❌ Ping to 8.8.8.8 failed"
                     
                     echo "=== Facebook API Test ==="
-                    docker exec node1 curl -I https://graph.facebook.com/v18.0 --connect-timeout 10 || echo "❌ Facebook API connection failed"
+                    docker exec node1 curl -I https://graph.facebook.com/v18.0 --connect-timeout 10 --max-time 30 || echo "❌ Facebook API connection failed"
+                    
+                    echo "=== Direct IP Test ==="
+                    docker exec node1 curl -I https://157.240.12.35/v18.0 --connect-timeout 10 -H "Host: graph.facebook.com" || echo "❌ Direct IP connection failed"
                     '''
                 }
             }
@@ -154,7 +190,11 @@ pipeline {
                                 def customUrl = "https://ungraphical-uranous-tambra.ngrok-free.app"
                                 echo "🌐 WhatsApp Bot is accessible at: ${customUrl}"
                                 sh "echo '${customUrl}' > ngrok_url.txt"
+                                
+                                // Test ngrok tunnel
                                 sh 'curl -f http://localhost:4040/api/tunnels || echo "⚠️  Ngrok API not responding"'
+                                sh "curl -I ${customUrl} --connect-timeout 10 || echo '⚠️  Ngrok tunnel not responding'"
+                                
                             } catch (Exception e) {
                                 echo "Error checking ngrok status: ${e}"
                                 sh 'docker logs ngrok-tunnel'
@@ -167,7 +207,7 @@ pipeline {
         stage('Monitor Container Logs') {
             steps {
                 script {
-                    echo "🔍 Starting container monitoring for 1 minute..."
+                    echo "🔍 Starting container monitoring for 2 minutes..."
                     
                     // Check container status first
                     def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
@@ -180,19 +220,19 @@ pipeline {
                     sh 'docker ps | grep -E "(node1|ngrok-tunnel)"'
                     
                     try {
-                        sh 'docker logs node1'
+                        sh 'docker logs --tail=50 node1'
                     } catch (Exception e) {
                         echo "Could not get initial logs: ${e}"
                     }
                     
                     script {
                         try {
-                            timeout(time: 60, unit: 'SECONDS') {
+                            timeout(time: 120, unit: 'SECONDS') {
                                 sh '''
-                                echo "=== STARTING LIVE LOGS MONITORING ==="
+                                echo "=== STARTING LIVE LOGS MONITORING (2 minutes) ==="
                                 docker logs -f node1 &
                                 LOGS_PID=$!
-                                sleep 60
+                                sleep 120
                                 kill $LOGS_PID 2>/dev/null || true
                                 echo "=== LOGS MONITORING COMPLETED ==="
                                 '''
@@ -206,6 +246,11 @@ pipeline {
                     script {
                         try {
                             sh 'curl -f http://localhost:3000/health 2>/dev/null || curl -f http://localhost:3000 2>/dev/null || echo "⚠️ Health check failed"'
+                            
+                            // Test sending a template message
+                            echo "🧪 Testing Facebook API connectivity from container..."
+                            sh 'docker exec node1 curl -f https://graph.facebook.com/v18.0 --connect-timeout 5 || echo "⚠️ Facebook API still not accessible"'
+                            
                         } catch (Exception e) {
                             echo "Health check: ${e}"
                         }
@@ -219,7 +264,7 @@ pipeline {
             script {
                 try {
                     echo "📋 Final Container Logs:"
-                    sh 'docker logs --tail=30 node1 || echo "Could not get final logs"'
+                    sh 'docker logs --tail=50 node1 || echo "Could not get final logs"'
                     sh 'docker ps | grep -E "(node1|ngrok-tunnel)" || echo "Containers not found"'
                     
                     if (fileExists('ngrok_url.txt')) {
@@ -230,7 +275,7 @@ pipeline {
                     // Debug info
                     echo "🔧 Debug Information:"
                     sh 'docker inspect node1 --format="{{.State.Status}}: {{.State.Error}}" || echo "Could not inspect container"'
-                    sh 'docker inspect node1 --format="{{.Config.Cmd}}" || echo "Could not get container command"'
+                    sh 'docker exec node1 cat /etc/resolv.conf || echo "Could not read final DNS config"'
                     
                 } catch (Exception e) {
                     echo "Could not display final status: ${e}"
@@ -239,14 +284,15 @@ pipeline {
         }
         success {
             echo '✅ Deployment successful! WhatsApp Bot is ready at: https://ungraphical-uranous-tambra.ngrok-free.app'
+            echo '🔧 Test your bot by sending a message to the WhatsApp number'
         }
         failure {
             script {
                 try {
                     echo "🔍 Error Analysis:"
-                    sh 'docker logs --tail=50 node1 || echo "No node1 logs"'
+                    sh 'docker logs --tail=100 node1 || echo "No node1 logs"'
                     sh 'docker logs --tail=20 ngrok-tunnel || echo "No ngrok logs"'
-                    sh 'docker inspect node1 || echo "Could not inspect node1"'
+                    sh 'docker network ls | grep wabot || echo "Network info not available"'
                 } catch (Exception e) {
                     echo "Could not display error logs: ${e}"
                 }
