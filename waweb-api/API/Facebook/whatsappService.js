@@ -94,6 +94,7 @@ export const sendTemplateMessage = async (phoneId, userId, templateName, templat
             }
         };
     }
+        WhatsAppLogger.logApiCall('POST', templateHeaderType, "Starting call api to Facebook", 'calling');
         await api.post(`${phoneId}/messages`, data);
         WhatsAppLogger.logTemplateMessage(userId,  phoneId+":"+templateName+" :"+templateHeaderType+" :"+templateImageLink, 'success');
     } catch (error) {

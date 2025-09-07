@@ -29,7 +29,16 @@ export function axiosInstance({
             return Promise.reject(error);
         }
     );
-
+    instance.interceptors.response.use(
+        response => {
+            console.log('API Success Response:', response.data);
+            return response;
+        },
+        error => {
+            // Sudah ada logging error di atas, tidak perlu di sini lagi
+            return Promise.reject(error);
+        }
+    );
     return instance;
 }
 
