@@ -75,19 +75,46 @@ pipeline {
         }
         stage('Run New Container') {
             steps {
-                sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 --dns=208.67.222.222 waweb-api'
+                script {
+                    sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 --dns=208.67.222.222 waweb-api'
+                    
+                    // Wait and check if container is actually running
+                    sleep(15)
+                    
+                    echo "🔍 Checking container status..."
+                    sh 'docker ps | grep node1 || echo "❌ Container node1 is not running"'
+                    
+                    // Get container status
+                    def containerStatus = sh(script: 'docker inspect node1 --format="{{.State.Status}}"', returnStdout: true).trim()
+                    echo "📊 Container Status: ${containerStatus}"
+                    
+                    if (containerStatus != "running") {
+                        echo "❌ Container failed to start. Getting logs..."
+                        sh 'docker logs node1'
+                        error("Container node1 failed to start properly")
+                    } else {
+                        echo "✅ Container node1 is running successfully"
+                    }
+                }
             }
         }
         stage('Network Diagnostics') {
             steps {
                 script {
                     echo "🔍 Running network diagnostics..."
-                    sleep(10) // Wait for container to fully start
+                    
+                    // Check if container is still running before diagnostics
+                    def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
+                    if (!containerRunning) {
+                        echo "❌ Container node1 is not running. Skipping diagnostics."
+                        sh 'docker logs node1'
+                        return
+                    }
                     
                     sh '''
                     echo "=== Container Network Info ==="
-                    docker exec node1 cat /etc/resolv.conf
-                    docker exec node1 ip route show
+                    docker exec node1 cat /etc/resolv.conf || echo "❌ Could not read resolv.conf"
+                    docker exec node1 ip route show || echo "❌ Could not show routes"
                     
                     echo "=== DNS Resolution Test ==="
                     docker exec node1 nslookup graph.facebook.com || echo "❌ DNS resolution failed"
@@ -104,6 +131,13 @@ pipeline {
         stage('Expose via Ngrok') {
             steps {
                 script {
+                    // Only proceed if main container is running
+                    def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
+                    if (!containerRunning) {
+                        echo "❌ Container node1 is not running. Skipping ngrok setup."
+                        return
+                    }
+                    
                     withCredentials([string(credentialsId: 'ngrok-auth-token', variable: 'NGROK_TOKEN')]) {
                         sh 'docker pull ngrok/ngrok:latest'
                         
@@ -134,6 +168,15 @@ pipeline {
             steps {
                 script {
                     echo "🔍 Starting container monitoring for 1 minute..."
+                    
+                    // Check container status first
+                    def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
+                    if (!containerRunning) {
+                        echo "❌ Container node1 is not running. Cannot monitor logs."
+                        sh 'docker logs node1 || echo "No logs available"'
+                        return
+                    }
+                    
                     sh 'docker ps | grep -E "(node1|ngrok-tunnel)"'
                     
                     try {
@@ -183,6 +226,12 @@ pipeline {
                         def url = readFile('ngrok_url.txt').trim()
                         echo "📱 Your WhatsApp Bot is live at: ${url}"
                     }
+                    
+                    // Debug info
+                    echo "🔧 Debug Information:"
+                    sh 'docker inspect node1 --format="{{.State.Status}}: {{.State.Error}}" || echo "Could not inspect container"'
+                    sh 'docker inspect node1 --format="{{.Config.Cmd}}" || echo "Could not get container command"'
+                    
                 } catch (Exception e) {
                     echo "Could not display final status: ${e}"
                 }
@@ -197,6 +246,7 @@ pipeline {
                     echo "🔍 Error Analysis:"
                     sh 'docker logs --tail=50 node1 || echo "No node1 logs"'
                     sh 'docker logs --tail=20 ngrok-tunnel || echo "No ngrok logs"'
+                    sh 'docker inspect node1 || echo "Could not inspect node1"'
                 } catch (Exception e) {
                     echo "Could not display error logs: ${e}"
                 }

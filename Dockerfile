@@ -9,6 +9,8 @@ ENV NODE_ENV=production
 RUN apk add --no-cache \
     curl \
     ca-certificates \
+    bind-tools \
+    iputils \
     && update-ca-certificates
 
 # Create app directory
@@ -39,13 +41,17 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000 || exit 1
 
-# Create startup script with DNS setup
-RUN echo '#!/bin/sh\n\
-# Add public DNS servers\n\
-echo "nameserver 8.8.8.8" >> /etc/resolv.conf\n\
-echo "nameserver 1.1.1.1" >> /etc/resolv.conf\n\
-echo "nameserver 208.67.222.222" >> /etc/resolv.conf\n\
-# Start application\n\
-exec npm start' > /start.sh && chmod +x /start.sh
+# Create startup script with proper Alpine syntax
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo '# Add public DNS servers' >> /start.sh && \
+    echo 'echo "nameserver 8.8.8.8" >> /etc/resolv.conf' >> /start.sh && \
+    echo 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf' >> /start.sh && \rver 1.1.1.1" >> /etc/resolv.conf' >> /start.sh && \
+    echo 'echo "nameserver 208.67.222.222" >> /etc/resolv.conf' >> /start.sh && \c/resolv.conf' >> /start.sh && \
+    echo '# Start application' >> /start.sh && \    echo '# Start application' >> /start.sh && \
+    echo 'exec npm start' >> /start.sh && \m start' >> /start.sh && \
+    chmod +x /start.sh    chmod +x /start.sh
 
+
+
+CMD ["/start.sh"]
 CMD ["/start.sh"]
