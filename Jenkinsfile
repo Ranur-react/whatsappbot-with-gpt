@@ -78,7 +78,7 @@ pipeline {
         stage('Run New Container') {
             steps {
                 // sh 'docker run -d --name node1 --network=host --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
-                sh 'docker run -d --name node1 --network=jenkins -p 3000:3000 --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
+                sh 'docker run -d --name node1  -p 3000:3000 --dns=8.8.8.8 --dns=1.1.1.1 waweb-api'
             }
         }
         stage('Expose via Ngrok') {
