@@ -76,14 +76,6 @@ pipeline {
         stage('Run New Container') {
             steps {
                 script {
-                    // Create custom resolv.conf for DNS
-                    sh '''
-                    echo "nameserver 8.8.8.8" > /tmp/resolv.conf.custom
-                    echo "nameserver 1.1.1.1" >> /tmp/resolv.conf.custom
-                    echo "nameserver 208.67.222.222" >> /tmp/resolv.conf.custom
-                    echo "search ." >> /tmp/resolv.conf.custom
-                    '''
-                    
                     // Create custom bridge network with proper DNS
                     sh '''
                     docker network create --driver bridge \
@@ -93,11 +85,10 @@ pipeline {
                     wabot-network || echo "Network already exists"
                     '''
                     
-                    // Run container with custom DNS configuration
+                    // Run container with DNS configuration (tanpa volume mount)
                     sh '''
                     docker run -d --name node1 \
                     --network=wabot-network \
-                    -v /tmp/resolv.conf.custom:/etc/resolv.conf:ro \
                     --dns=8.8.8.8 \
                     --dns=1.1.1.1 \
                     --dns=208.67.222.222 \
@@ -113,7 +104,21 @@ pipeline {
                     '''
                     
                     // Wait for container to start
-                    sleep(15)
+                    sleep(10)
+                    
+                    // Manually update DNS inside container after it starts
+                    sh '''
+                    echo "=== Updating DNS Configuration Inside Container ==="
+                    docker exec node1 sh -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+                    docker exec node1 sh -c "echo 'nameserver 1.1.1.1' >> /etc/resolv.conf"
+                    docker exec node1 sh -c "echo 'nameserver 208.67.222.222' >> /etc/resolv.conf"
+                    docker exec node1 sh -c "echo 'search .' >> /etc/resolv.conf"
+                    
+                    echo "=== DNS Configuration Applied ==="
+                    docker exec node1 cat /etc/resolv.conf
+                    '''
+                    
+                    sleep(5)
                     
                     echo "🔍 Checking container status..."
                     sh 'docker ps | grep node1 || echo "❌ Container node1 is not running"'
@@ -135,7 +140,7 @@ pipeline {
         stage('Network Diagnostics & Fix') {
             steps {
                 script {
-                    echo "🔍 Running network diagnostics and fixes..."
+                    echo "🔍 Running network diagnostics and DNS tests..."
                     
                     // Check if container is still running before diagnostics
                     def containerRunning = sh(script: 'docker ps -q -f name=node1', returnStdout: true).trim()
@@ -150,28 +155,22 @@ pipeline {
                     docker exec node1 cat /etc/resolv.conf || echo "❌ Could not read resolv.conf"
                     docker exec node1 ip route show || echo "❌ Could not show routes"
                     
-                    echo "=== Updating DNS in Container ==="
-                    docker exec node1 sh -c "echo 'nameserver 8.8.8.8' > /tmp/resolv.conf.new"
-                    docker exec node1 sh -c "echo 'nameserver 1.1.1.1' >> /tmp/resolv.conf.new"
-                    docker exec node1 sh -c "echo 'nameserver 208.67.222.222' >> /tmp/resolv.conf.new"
-                    docker exec node1 sh -c "echo 'search .' >> /tmp/resolv.conf.new"
-                    docker exec node1 sh -c "cp /tmp/resolv.conf.new /etc/resolv.conf" || echo "Could not update resolv.conf"
-                    
-                    echo "=== Updated DNS Configuration ==="
-                    docker exec node1 cat /etc/resolv.conf
-                    
-                    echo "=== DNS Resolution Test ==="
-                    docker exec node1 nslookup graph.facebook.com 8.8.8.8 || echo "❌ DNS resolution failed"
-                    docker exec node1 dig @8.8.8.8 graph.facebook.com || echo "❌ Dig failed"
-                    
-                    echo "=== Network Connectivity Test ==="
+                    echo "=== Basic Connectivity Test ==="
                     docker exec node1 ping -c 3 8.8.8.8 || echo "❌ Ping to 8.8.8.8 failed"
                     
-                    echo "=== Facebook API Test ==="
-                    docker exec node1 curl -I https://graph.facebook.com/v18.0 --connect-timeout 10 --max-time 30 || echo "❌ Facebook API connection failed"
+                    echo "=== DNS Resolution Test ==="
+                    docker exec node1 nslookup google.com || echo "❌ Google DNS resolution failed"
+                    docker exec node1 nslookup graph.facebook.com || echo "❌ Facebook DNS resolution failed"
                     
-                    echo "=== Direct IP Test ==="
-                    docker exec node1 curl -I https://157.240.12.35/v18.0 --connect-timeout 10 -H "Host: graph.facebook.com" || echo "❌ Direct IP connection failed"
+                    echo "=== HTTP Connectivity Test ==="
+                    docker exec node1 curl -I http://google.com --connect-timeout 10 || echo "❌ Google HTTP connection failed"
+                    docker exec node1 curl -I https://graph.facebook.com/v22.0 --connect-timeout 10 || echo "❌ Facebook HTTPS connection failed"
+                    
+                    echo "=== Test with specific DNS server ==="
+                    docker exec node1 nslookup graph.facebook.com 8.8.8.8 || echo "❌ DNS resolution with 8.8.8.8 failed"
+                    
+                    echo "=== Direct IP Test (if DNS fails) ==="
+                    docker exec node1 curl -I https://157.240.12.35/v22.0 --connect-timeout 10 -H "Host: graph.facebook.com" || echo "❌ Direct IP connection failed"
                     '''
                 }
             }
